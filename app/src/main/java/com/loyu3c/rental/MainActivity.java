@@ -86,7 +86,9 @@ public class MainActivity extends Activity {
                     unpaid+=debt;if(LocalDate.parse(r.getString("due")).isBefore(today())) overdue+=debt;
                     if(month.equals(r.getString("month"))) billed+=Ledger.total(r);
                 }
-                for(int i=0;i<receipts.length();i++) if(receipts.getJSONObject(i).getString("date").startsWith(month)) received+=Ledger.money(receipts.getJSONObject(i),"amount");
+                for(int i=0;i<receipts.length();i++) if(receipts.getJSONObject(i).optBoolean("cash",true)&&receipts.getJSONObject(i).getString("date").startsWith(month)) received+=Ledger.money(receipts.getJSONObject(i),"amount");
+                long settlementReceived=0;JSONArray settlements=data("settlements");for(int i=0;i<settlements.length();i++){JSONArray payments=settlements.getJSONObject(i).getJSONArray("payments");for(int j=0;j<payments.length();j++)if(payments.getJSONObject(j).getString("date").startsWith(month))settlementReceived+=payments.getJSONObject(j).getLong("amount");}
+                card("本月退租結算補繳","實際收到 $"+settlementReceived+"；押金抵付不算銀行匯款。");
                 card(month+" 收租", "本月已開帳單 $"+billed+"\n本月實際收款 $"+received+"\n所有帳單未付 $"+unpaid+"（含未到期）\n已逾期 $"+overdue);
             } catch(Exception e) { card("收租資料異常", "請先匯出備份並停止收款登錄。"); }
             try {
@@ -105,6 +107,7 @@ public class MainActivity extends Activity {
             card("租客的獨立報表", "每租約獨立檔案，只看自己的租期、押金與繳款紀錄。");
             action("本地支出與各棟分攤報表",this::expenseReport);
             action("押金總覽",this::depositOverview);
+            action("退租結算與待收／待退",this::settlementOverview);
             action("帳戶流水與存摺對帳",this::accountsDialog);
             card("歷史補登", "起算日前歷史交易列入報表，不重複改變期初餘額。\n帳務未齊，餘額需核對；押金另行追蹤，不是可用租金收入。");
             action("匯出完整備份", this::exportBackup);
@@ -701,6 +704,9 @@ public class MainActivity extends Activity {
         };refresh.run();showPanel("押金總覽",content,refresh);
     }
 
+    private void settlementOverview() {
+        LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{JSONArray rows=data("settlements");long due=0,refund=0;for(int i=0;i<rows.length();i++){JSONObject s=rows.getJSONObject(i);due+=Settlements.due(s);refund+=Deposits.summary(s.getString("leaseId"),data("deposits")).getLong("held");}card("退租結算總覽","尚待補繳 $"+due+" · 押金尚待退 $"+refund);for(int i=rows.length()-1;i>=0;i--){JSONObject s=rows.getJSONObject(i),lease=find("leases",s.getString("leaseId"));tapCard(s.getString("unitCodeSnapshot")+" · "+s.getString("tenantSnapshot"),s.getString("date")+"\n待補繳 $"+Settlements.due(s)+" · 待退 $"+Deposits.summary(s.getString("leaseId"),data("deposits")).getLong("held"),()->leaseLedger(lease));}if(rows.length()==0)card("尚無退租結算","從租約的帳單與收款選擇退租／結算費用。");}catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("退租結算總覽",layout,refresh);
+    }
     private boolean settled(String leaseId) {
         try{return Settlements.forLease(data("settlements"),leaseId)!=null;}catch(Exception e){return true;}
     }
@@ -715,7 +721,7 @@ public class MainActivity extends Activity {
         if(s==null){action("退租／結算費用",()->settlementForm(lease));return;}
         long held=Deposits.summary(lease.getString("id"),data("deposits")).getLong("held");
         card("已退租 · "+s.getString("date"),"租金與水電原帳單尚欠 $"+s.getLong("invoiceDebt")+"\n另收修繕費 $"+s.getLong("repairs")+" · 其他費用 $"+s.getLong("other")+"\n結算費用合計 $"+s.getLong("total")+"\n押金抵付費用 $"+s.getLong("depositUsed")+"\n尚需補繳 $"+Settlements.due(s)+" · 押金尚待退 $"+held+"\n"+s.getString("note"));
-        JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);card("結算原帳單 · "+r.getString("month")+" "+r.getString("kind"),"原金額 $"+r.getLong("total")+" · 結算前已付 $"+r.getLong("paidBefore")+" · 結算時未付 $"+r.getLong("remaining"));}
+        JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);card("結算原帳單 · "+r.getString("month")+" "+r.getString("kind"),"租金 $"+r.getLong("rent")+" · 水費 $"+r.getLong("water")+" · 電費 $"+r.getLong("electricity")+"\n原合計 $"+r.getLong("total")+" · 結算前已付 $"+r.getLong("paidBefore")+" · 結算時未付 $"+r.getLong("remaining"));}
         if(Settlements.due(s)>0)action("＋ 收到結算補繳",()->settlementPaymentForm(lease));
         if(held>0)action("退還剩餘押金",()->depositForm(lease,true));
         action("複製退租結算明細",()->{try{String msg=s.getString("unitCodeSnapshot")+" · "+s.getString("tenantSnapshot")+"\n退租日 "+s.getString("date")+"\n原帳單未付 $"+s.getLong("invoiceDebt")+"\n修繕費 $"+s.getLong("repairs")+" · 其他 $"+s.getLong("other")+"\n結算費用 $"+s.getLong("total")+"\n押金抵付 $"+s.getLong("depositUsed")+"\n尚需補繳 $"+Settlements.due(s)+" · 押金待退 $"+Deposits.summary(lease.getString("id"),data("deposits")).getLong("held")+"\n"+s.getString("note");android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("退租結算",display(msg)));Toast.makeText(this,"結算明細已複製",Toast.LENGTH_SHORT).show();}catch(Exception e){error(e);}});
@@ -734,7 +740,7 @@ public class MainActivity extends Activity {
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("退租結算費用").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽結算",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONObject before=fullBackup(),proposed=Settlements.plan(before,lease.getString("id"),date.getText().toString(),amount(rent,false),amount(water,false),amount(prior,false),amount(current,false),amount(repairs,false),amount(other,false),note.getText().toString());validateBackup(proposed);
-            JSONObject s=Settlements.forLease(proposed.getJSONArray("settlements"),lease.getString("id"));StringBuilder preview=new StringBuilder("退租日 "+s.getString("date")+"\n");JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);preview.append(r.getString("month")).append(" ").append(r.getString("kind")).append(" 尚欠 $").append(r.getLong("remaining")).append("\n");}
+            JSONObject s=Settlements.forLease(proposed.getJSONArray("settlements"),lease.getString("id"));StringBuilder preview=new StringBuilder("退租日 "+s.getString("date")+"\n");JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);preview.append(r.getString("month")).append(" ").append(r.getString("kind")).append("（租金 $").append(r.getLong("rent")).append("、水費 $").append(r.getLong("water")).append("、電費 $").append(r.getLong("electricity")).append("）尚欠 $").append(r.getLong("remaining")).append("\n");}
             preview.append("修繕費 $").append(s.getLong("repairs")).append(" · 其他 $").append(s.getLong("other")).append("\n費用合計 $").append(s.getLong("total")).append("\n持有押金 $").append(s.getLong("depositBefore")).append("\n押金抵付 $").append(s.getLong("depositUsed")).append("\n應退押金 $").append(s.getLong("depositBefore")-s.getLong("depositUsed")).append(" · 需補繳 $").append(Settlements.due(s)).append("\n確認只建立費用、抵付與退租紀錄；實際退款／補繳另外登錄。");
             new AlertDialog.Builder(this).setMessage(display(preview.toString())).setNegativeButton("返回修改",null).setPositiveButton("確認退租結算",(d,b)->{try{if(saveSettlement(proposed,before))dialog.dismiss();}catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
@@ -773,6 +779,7 @@ public class MainActivity extends Activity {
         action("對應舊收款的實際帳戶",this::linkReceipts);
         action("支出與各棟分攤報表",this::expenseReport);
         action("押金總覽／收付",this::depositOverview);
+        action("退租結算與待收／待退",this::settlementOverview);
         JSONArray expenses=data("expenses"),transfers=data("transfers");
         if(expenses.length()==0&&transfers.length()==0)card("尚無支出或轉帳","可以逐步補登半年資料。起算日前交易列報表但不再影響期初餘額。");
         List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++)rows.add(expenses.optJSONObject(i));for(int i=0;i<transfers.length();i++)rows.add(transfers.optJSONObject(i));
@@ -855,7 +862,7 @@ public class MainActivity extends Activity {
             if(saveChecked(key,rows)){dialog.dismiss();render();}
         }catch(Exception e){error(e);}}));dialog.show();
     }
-    private int unlinkedReceipts() {JSONArray rows=data("receipts");int n=0;for(int i=0;i<rows.length();i++)if(rows.optJSONObject(i).optString("accountId").isEmpty())n++;return n;}
+    private int unlinkedReceipts() {JSONArray rows=data("receipts");int n=0;for(int i=0;i<rows.length();i++)if(rows.optJSONObject(i).optBoolean("cash",true)&&rows.optJSONObject(i).optString("accountId").isEmpty())n++;return n;}
     private void showPanel(String title,LinearLayout layout) {showPanel(title,layout,null);}
     private void showPanel(String title,LinearLayout layout,Runnable refresh) {
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
@@ -943,7 +950,7 @@ public class MainActivity extends Activity {
         CheckBox include=new CheckBox(this);include.setText("也顯示已對應收款（可更正帳戶）");layout.addView(include);EditText search=field(layout,"搜尋日期、原帳戶文字或金額");
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
         Runnable refresh=()->{list.removeAllViews();LinearLayout previous=body;body=list;try{
-            JSONArray receipts=data("receipts");int count=0;for(int i=receipts.length()-1;i>=0;i--){JSONObject r=receipts.getJSONObject(i);if(!include.isChecked()&&!r.optString("accountId").isEmpty())continue;
+            JSONArray receipts=data("receipts");int count=0;for(int i=receipts.length()-1;i>=0;i--){JSONObject r=receipts.getJSONObject(i);if(!r.optBoolean("cash",true))continue;if(!include.isChecked()&&!r.optString("accountId").isEmpty())continue;
                 String label=r.getString("date")+" · "+receiptTenant(r)+" · "+r.getString("account")+" · $"+r.getLong("amount");if(!label.contains(search.getText().toString().trim()))continue;count++;
                 tapCard(label,"目前對應："+accountName(r.optString("accountId")),()->receiptAccountForm(r,accounts));}
             if(count==0)card("沒有符合的收款","已對應收款依實際日期與起算日計入帳面。可勾選顯示已對應紀錄或調整搜尋。");
@@ -1025,7 +1032,7 @@ public class MainActivity extends Activity {
             for(int j=i+1;j<l.length();j++) {
                 JSONObject other=l.getJSONObject(j),otherUnit=null;for(int k=0;k<u.length();k++)if(u.getJSONObject(k).getString("id").equals(other.getString("unitId")))otherUnit=u.getJSONObject(k);
                 boolean conflict=lease.getString("unitId").equals(other.getString("unitId")) || (unit!=null&&otherUnit!=null&&unit.getString("propertyId").equals(otherUnit.getString("propertyId"))&&(unit.getString("type").equals("整棟")||otherUnit.getString("type").equals("整棟")));
-                if(conflict&&!LocalDate.parse(lease.optString("terminatedOn",lease.getString("end"))).isBefore(LocalDate.parse(other.getString("start")))&&!LocalDate.parse(lease.getString("start")).isAfter(LocalDate.parse(other.optString("terminatedOn",other.getString("end")))))throw new IllegalArgumentException("備份租約重疊");
+                if(conflict&&Settlements.overlaps(lease,other))throw new IllegalArgumentException("備份租約重疊");
             }
         }
         JSONArray invoices=backup.getJSONArray("invoices");

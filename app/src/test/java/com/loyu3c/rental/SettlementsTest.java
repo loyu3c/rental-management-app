@@ -48,6 +48,9 @@ public class SettlementsTest {
         JSONObject b=plan(backup(20000),0);b.getJSONArray("deposits").getJSONObject(1).put("void",true);try{validate(b);fail();}catch(IllegalArgumentException expected){}
         b=plan(backup(20000),0);b.getJSONArray("invoices").getJSONObject(0).put("rent",5001);try{validate(b);fail();}catch(IllegalArgumentException expected){}
     }
+    @Test public void turnoverAllowsNextDayButNotOverlappingDayAndKeepsOriginalEnd() throws Exception {
+        JSONObject b=plan(backup(0),0),old=b.getJSONArray("leases").getJSONObject(0),next=new JSONObject(old.toString());next.remove("terminatedOn");next.put("start","2026-10-04");assertFalse(Settlements.overlaps(old,next));assertEquals("2027-01-01",old.getString("end"));next.put("start","2026-10-03");assertTrue(Settlements.overlaps(old,next));
+    }
     @Test public void backupRoundTripAndCashCutoffPreserveAmounts() throws Exception {
         JSONObject b=plan(backup(2000),10000);b=Settlements.payment(b,"L","2026-11-01","A",3000,"");b=new JSONObject(b.toString());validate(b);assertEquals(2000,bank(b));assertEquals(11200,Settlements.due(Settlements.forLease(b.getJSONArray("settlements"),"L")));
     }

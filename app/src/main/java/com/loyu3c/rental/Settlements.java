@@ -6,6 +6,8 @@ import java.util.*;
 
 /** Settlement costs, noncash deposit offsets and cash top-ups remain distinct. */
 public final class Settlements {
+    public static LocalDate effectiveEnd(JSONObject lease) throws JSONException {return LocalDate.parse(lease.optString("terminatedOn",lease.getString("end")));}
+    public static boolean overlaps(JSONObject a,JSONObject b) throws JSONException {return !effectiveEnd(a).isBefore(LocalDate.parse(b.getString("start")))&&!LocalDate.parse(a.getString("start")).isAfter(effectiveEnd(b));}
     public static JSONObject forLease(JSONArray rows,String id) throws JSONException {
         for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getString("leaseId").equals(id))return rows.getJSONObject(i);return null;
     }
@@ -31,7 +33,7 @@ public final class Settlements {
         JSONObject monthly=Ledger.monthlyPlan(lease,month,finalRent,water,prior,current,invoices,receipts);JSONArray added=monthly.getJSONArray("added");for(int i=0;i<added.length();i++)Ledger.addUnique(invoices,added.getJSONObject(i));
         JSONArray lines=new JSONArray();long debt=0;
         for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(!leaseId.equals(r.getString("leaseId")))continue;long paid=Ledger.paid(r.getString("id"),receipts),left=Ledger.total(r)-paid;
-            debt=Math.addExact(debt,left);lines.put(new JSONObject().put("invoiceId",r.getString("id")).put("month",r.getString("month")).put("kind",r.getString("kind")).put("total",Ledger.total(r)).put("paidBefore",paid).put("remaining",left));}
+            debt=Math.addExact(debt,left);lines.put(new JSONObject().put("invoiceId",r.getString("id")).put("month",r.getString("month")).put("kind",r.getString("kind")).put("total",Ledger.total(r)).put("rent",r.getLong("rent")).put("water",r.getLong("water")).put("electricity",r.getLong("electricity")).put("paidBefore",paid).put("remaining",left));}
         long total=Math.addExact(debt,Math.addExact(repairs,other)),held=Deposits.summary(leaseId,deposits).getLong("held"),used=Math.min(held,total);
         if(total>1000000000L||held>1000000000L)throw new IllegalArgumentException("結算總額超出本版支援範圍");
         JSONObject s=new JSONObject().put("id",UUID.randomUUID().toString()).put("leaseId",leaseId).put("date",date).put("note",note.trim())
@@ -47,6 +49,7 @@ public final class Settlements {
         if(LocalDate.parse(date).isBefore(LocalDate.parse(s.getString("date")))||amount<=0||amount>due(s))throw new IllegalArgumentException("日期不得早於結算日，補繳金額不得超過尚欠費用");
         JSONObject account=null;JSONArray accounts=b.getJSONArray("accounts");for(int i=0;i<accounts.length();i++)if(accounts.getJSONObject(i).getString("id").equals(accountId))account=accounts.getJSONObject(i);
         if(account==null)throw new IllegalArgumentException("請選實際收款帳戶");
+        JSONArray priorPayments=s.getJSONArray("payments");for(int i=0;i<priorPayments.length();i++){JSONObject old=priorPayments.getJSONObject(i);if(old.getString("date").equals(date)&&old.getString("accountId").equals(accountId)&&old.getLong("amount")==amount&&old.getString("note").equals(note.trim()))throw new IllegalArgumentException("已有相同補繳，請核對；另一筆請填不同交易辨識");}
         JSONObject p=new JSONObject().put("id",UUID.randomUUID().toString()).put("date",date).put("accountId",accountId).put("amount",amount).put("note",note.trim());
         JSONArray receipts=b.getJSONArray("receipts"),invoices=b.getJSONArray("invoices");long debt=0;for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(leaseId.equals(r.getString("leaseId")))debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}
         long applied=Math.min(debt,amount);p.put("invoiceApplied",applied);if(applied>0)receipts.put(Ledger.receipt(leaseId,date,"結算補繳（流水另計）",applied,note,invoices,receipts).put("cash",false).put("settlementId",s.getString("id")).put("paymentId",p.getString("id")));
@@ -64,7 +67,7 @@ public final class Settlements {
             LocalDate d=LocalDate.parse(s.getString("date"));if(d.isBefore(LocalDate.parse(lease.getString("start")))||d.isAfter(LocalDate.parse(lease.getString("end"))))throw new IllegalArgumentException("退租日期錯誤");
             long debt=0;Set<String> billIds=new HashSet<>();JSONArray lines=s.getJSONArray("lines"),base=s.getJSONArray("baseReceipts");
             for(int j=0;j<lines.length();j++){JSONObject line=lines.getJSONObject(j),bill=null;String bid=line.getString("invoiceId");if(!billIds.add(bid))throw new IllegalArgumentException();for(int k=0;k<invoices.length();k++)if(bid.equals(invoices.getJSONObject(k).getString("id")))bill=invoices.getJSONObject(k);
-                if(bill==null||!lid.equals(bill.getString("leaseId"))||!line.getString("month").equals(bill.getString("month"))||!line.getString("kind").equals(bill.getString("kind"))||line.getLong("total")!=Ledger.total(bill)||line.getLong("paidBefore")!=Ledger.paid(bid,base)||line.getLong("remaining")!=Ledger.total(bill)-Ledger.paid(bid,base))throw new IllegalArgumentException("已結算帳單被修改");debt=Math.addExact(debt,line.getLong("remaining"));}
+                if(bill==null||!lid.equals(bill.getString("leaseId"))||!line.getString("month").equals(bill.getString("month"))||!line.getString("kind").equals(bill.getString("kind"))||line.getLong("total")!=Ledger.total(bill)||line.getLong("rent")!=bill.getLong("rent")||line.getLong("water")!=bill.getLong("water")||line.getLong("electricity")!=bill.getLong("electricity")||line.getLong("paidBefore")!=Ledger.paid(bid,base)||line.getLong("remaining")!=Ledger.total(bill)-Ledger.paid(bid,base))throw new IllegalArgumentException("已結算帳單被修改");debt=Math.addExact(debt,line.getLong("remaining"));}
             for(int j=0;j<invoices.length();j++){JSONObject bill=invoices.getJSONObject(j);if(lid.equals(bill.getString("leaseId"))&&!billIds.contains(bill.getString("id")))throw new IllegalArgumentException("已退租不能新增帳單");}
             if(debt!=s.getLong("invoiceDebt")||s.getLong("total")!=Math.addExact(debt,Math.addExact(Ledger.money(s,"repairs"),Ledger.money(s,"other")))||s.getLong("depositBefore")!=Deposits.summary(lid,s.getJSONArray("baseDeposits")).getLong("held")||s.getLong("depositUsed")!=Math.min(s.getLong("depositBefore"),s.getLong("total"))||due(s)<0)throw new IllegalArgumentException("結算金額不一致");
             Set<String> originalReceiptIds=new HashSet<>();for(int j=0;j<base.length();j++){JSONObject old=base.getJSONObject(j);originalReceiptIds.add(old.getString("id"));JSONObject now=null;for(int k=0;k<receipts.length();k++)if(old.getString("id").equals(receipts.getJSONObject(k).getString("id")))now=receipts.getJSONObject(k);if(now==null||now.getLong("amount")!=old.getLong("amount")||!now.getJSONArray("allocations").toString().equals(old.getJSONArray("allocations").toString())||!now.getString("date").equals(old.getString("date")))throw new IllegalArgumentException("已結算收款不可撤銷或重新分配");}
