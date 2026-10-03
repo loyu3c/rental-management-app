@@ -1,4 +1,4 @@
-name: Android Preview APK
+name: Android Debug Checks
 on:
   push:
     branches: [main]
@@ -24,9 +24,3 @@ jobs:
           gradle-version: '8.9'
       - name: Build and lint
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rental-management-preview
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
