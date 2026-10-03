@@ -61,6 +61,7 @@ public final class Bookkeeping {
             account(r.getString("name"),type,r.getString("start"),Ledger.money(r,"opening"),r.optString("propertyId"));
             if(type.equals("現金"))cash++;if(!r.optString("propertyId").isEmpty()&&!propertyIds.contains(r.getString("propertyId")))throw new IllegalArgumentException("帳戶的不動產不存在");}
         if(cash>1)throw new IllegalArgumentException("共用現金帳戶只能有一個");
+        if(backup.has("meterReadings"))MeterReadings.validate(backup);
         if(backup.has("settlements"))Settlements.validate(backup);
         if(backup.has("deposits")) {
             Set<String> leaseIds=new HashSet<>();JSONArray leases=backup.getJSONArray("leases");for(int i=0;i<leases.length();i++)leaseIds.add(leases.getJSONObject(i).getString("id"));

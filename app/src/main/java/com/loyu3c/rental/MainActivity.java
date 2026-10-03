@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
     }
     private String pendingBackup;
     private String propertyId="", unitId="";
-    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements"};
+    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings"};
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Taipei")); }
     private static final int EXPORT = 41, IMPORT = 42;
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(248, 244, 237)); root.setPadding(dp(16), dp(16), dp(16), dp(8));
         TextView heading = text("暖色帳本 / " + tabs[selected], 26, Color.rgb(83, 60, 40));
         heading.setTypeface(null, Typeface.BOLD); root.addView(heading);
-        root.addView(text("整合測試版 · 資料存在手機；Google、拍照與語音未啟用", 13, Color.rgb(137, 83, 15)));
+        root.addView(text("整合測試版 · 資料存在手機；Google與語音未啟用", 13, Color.rgb(137, 83, 15)));
         ScrollView scroll = new ScrollView(this);
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -519,6 +519,7 @@ public class MainActivity extends Activity {
             if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
             depositCard(lease);
             settlementCard(lease);
+            action("抄電表／查看照片",()->meterPanel(lease));
             Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
             for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))months.computeIfAbsent(r.getString("month"),key->new ArrayList<>()).add(r);}
             for(Map.Entry<String,List<JSONObject>> entry:months.entrySet()) {
@@ -546,7 +547,7 @@ public class MainActivity extends Activity {
         TextView rentLabel=text("租金",15,Color.DKGRAY);layout.addView(rentLabel);
         EditText rent=number(layout,"本月租金");rent.setText(lease.optString("rent"));
         LinearLayout utilities=form();layout.addView(utilities);
-        utilities.addView(text("水費與電表（照片尚未啟用）",15,Color.DKGRAY));
+        utilities.addView(text("水費與電表（可帶入已存抄表讀數）",15,Color.DKGRAY));
         EditText water=number(utilities,"固定月水費，未知請先確認"),prior=number(utilities,"上期／起始電表讀數"),current=number(utilities,"本期電表讀數");
         TextView rateLabel=text("",14,Color.DKGRAY);utilities.addView(rateLabel);
         TextView summary=text("",16,Color.rgb(90,61,37));layout.addView(summary);
@@ -573,8 +574,9 @@ public class MainActivity extends Activity {
                 boolean collect=lease.optString("utilities").equals("管理者代收水電");utilities.setVisibility(collect||u!=null?android.view.View.VISIBLE:android.view.View.GONE);
                 water.setEnabled(u==null);prior.setEnabled(u==null);current.setEnabled(u==null);
                 water.setText(u!=null?u.optString("water"):lease.isNull("water")?"":lease.optString("water"));
-                prior.setText(u!=null?u.optString("previous"):"");current.setText(u!=null?u.optString("current"):"");
-                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數");
+                JSONObject reading=MeterReadings.latest(data("meterReadings"),lease.optString("id"),ym.toString());
+                prior.setText(u!=null?u.optString("previous"):reading==null?"":reading.optString("previous"));current.setText(u!=null?u.optString("current"):reading==null?"":reading.optString("current"));
+                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數"+(reading==null?"":" · 已帶入抄表日期 "+reading.optString("date")));
             }catch(Exception ignored){}finally{refreshing[0]=false;}update.run();
         };
         TextWatcher totals=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){update.run();}public void afterTextChanged(Editable e){}};
@@ -756,7 +758,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject fullBackup() throws JSONException {
-        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",5);for(String key:KEYS)backup.put(key,data(key));return backup;
+        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",6);for(String key:KEYS)backup.put(key,data(key));return backup;
     }
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
@@ -770,7 +772,7 @@ public class MainActivity extends Activity {
         String[] names=new String[accounts.size()];for(int i=0;i<names.length;i++)names[i]=accounts.get(i).optString("name")+" · "+accounts.get(i).optString("type");return choice(layout,fieldLabel(label),names);
     }
     private void accountingScreen() {
-        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付可在租約明細登錄；語音、照片與Google尚未啟用。");
+        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付可在租約明細登錄；電表照片已可使用；語音與Google尚未啟用。");
         action("＋ 新增銀行／共用現金帳戶",this::accountForm);
         if(data("accounts").length()==0) {card("尚未設定帳戶","請依存摺建立各銀行帳戶、共用現金的起算日與期初餘額。未設定不顯示為零。");return;}
         action("＋ 記錄支出／房貸扣款",this::expenseForm);
@@ -974,33 +976,87 @@ public class MainActivity extends Activity {
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("支出報表",layout,refresh);
     }
 
+    private static final int CAMERA_PHOTO=43, PICK_PHOTO=44;
+    private File photoDir() {File dir=new File(getFilesDir(),"meter-photos");if(!dir.isDirectory())dir.mkdirs();return dir;}
+    private Uri photoUri(String file) {return new Uri.Builder().scheme("content").authority(getPackageName()+".photos").appendPath(file).build();}
+    private void meterPanel(JSONObject lease) {
+        LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{
+            card("抄電表與照片",lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant")+"\n紀錄不會自動開單；建立帳單時帶入同租約、同月份最新有效讀數。照片可點開檢查。已開帳單不會被改動。");
+            action("＋ 新增抄表紀錄",()->meterForm(lease));JSONArray rows=data("meterReadings");for(int i=rows.length()-1;i>=0;i--){JSONObject r=rows.getJSONObject(i);if(!lease.optString("id").equals(r.optString("leaseId")))continue;
+                card(r.getString("month")+" · 抄表日 "+r.getString("date"),"電表 "+fmt(r.getLong("previous"))+" → "+fmt(r.getLong("current"))+" · 用量 "+fmt(r.getLong("current")-r.getLong("previous"))+" 度\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷錯誤紀錄":""));
+                if(!r.getString("file").isEmpty())action("查看電表照片",()->viewMeterPhoto(r.optString("file")));
+                if(!r.getBoolean("void"))action("撤銷此筆錯誤抄表",()->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}});
+            }
+        }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("抄電表／照片",layout,refresh);
+    }
+    private void viewMeterPhoto(String name) {
+        try{File f=new File(photoDir(),name);if(!f.isFile())throw new IOException("照片缺少，請從完整ZIP備份還原");Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(name),"image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(view);}catch(Exception e){error(new IllegalArgumentException("無法開啟照片，請確認有圖片檢視程式及照片檔案"));}
+    }
+    private void meterForm(JSONObject lease) {
+        LinearLayout layout=form();EditText month=dateField(layout,"用電帳單月份",true),date=dateField(layout,"實際抄表日期",false),prior=number(layout,"上期／起始電表讀數"),current=number(layout,"本期電表讀數"),note=field(layout,"抄表備註");month.setText(YearMonth.from(today()).toString());
+        layout.addView(text("照片是讀數依據，請先填前後讀數。換租客的起始讀數請自行確認，不沿用上一位。換表／讀數倒退需另行處理。",14,Color.DKGRAY));
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("新增抄表紀錄").setView(scroll).setNegativeButton("取消",null).setNeutralButton("只存讀數",null).setPositiveButton("附上照片",null).create();
+        dialog.setOnShowListener(v->{dialog.getButton(-3).setOnClickListener(w->{try{JSONObject row=MeterReadings.reading(lease,month.getText().toString(),date.getText().toString(),amount(prior,false),amount(current,false),"",note.getText().toString());confirmMeterPhoto(row,dialog);}catch(Exception e){error(e);}});
+            dialog.getButton(-1).setOnClickListener(w->{try{JSONObject row=MeterReadings.reading(lease,month.getText().toString(),date.getText().toString(),amount(prior,false),amount(current,false),UUID.randomUUID()+".jpg",note.getText().toString());
+                new AlertDialog.Builder(this).setTitle("電表照片來源").setItems(new String[]{"開啟相機拍照","從相簿／檔案選照片"},(d,n)->{try{
+                    getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingMeter",row.toString()).commit();
+                    if(n==0){Uri uri=photoUri(row.getString("file"));Intent camera=new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).putExtra(android.provider.MediaStore.EXTRA_OUTPUT,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);camera.setClipData(android.content.ClipData.newRawUri("meter",uri));photoDir();startActivityForResult(camera,CAMERA_PHOTO);}
+                    else startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),PICK_PHOTO);dialog.dismiss();
+                }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();error(new IllegalArgumentException("無法啟動相機或相簿，請改選另一個來源"));}}).show();
+            }catch(Exception e){error(e);}});});dialog.show();
+    }
+    private android.graphics.Bitmap photoPreview(File file) throws IOException {
+        android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();opts.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);
+        if(opts.outWidth<=0||opts.outHeight<=0||file.length()==0||file.length()>BackupArchive.PHOTO_LIMIT)throw new IOException("照片無效或超過25MB");opts.inJustDecodeBounds=false;opts.inSampleSize=1;while(Math.max(opts.outWidth,opts.outHeight)/opts.inSampleSize>1000)opts.inSampleSize*=2;
+        android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(bitmap==null)throw new IOException("無法讀取照片");return bitmap;
+    }
+    private void confirmMeterPhoto(JSONObject row,AlertDialog source) {
+        try{LinearLayout layout=form();layout.addView(text(row.getString("month")+" · "+row.getString("date")+"\n電表 "+fmt(row.getLong("previous"))+" → "+fmt(row.getLong("current"))+"\n"+row.getString("note")+"\n確認只保存抄表紀錄；不直接開帳單。",16,Color.DKGRAY));
+            String file=row.getString("file");if(!file.isEmpty()){ImageView preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setImageBitmap(photoPreview(new File(photoDir(),file)));layout.addView(preview,new LinearLayout.LayoutParams(-1,dp(220)));preview.setOnClickListener(v->viewMeterPhoto(file));layout.addView(text("點照片可用圖片程式查看原圖；請核對讀數清楚。",14,Color.DKGRAY));}
+            ScrollView scroll=new ScrollView(this);scroll.addView(layout);boolean[] saved={false};AlertDialog confirm=new AlertDialog.Builder(this).setTitle("確認抄表與照片").setView(scroll).setNegativeButton("取消",null).setPositiveButton("儲存",null).create();confirm.setOnDismissListener(d->{if(!saved[0]&&!file.isEmpty())new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();});
+            confirm.setOnShowListener(v->confirm.getButton(-1).setOnClickListener(w->{try{JSONArray next=data("meterReadings");for(int i=0;i<next.length();i++)if(next.getJSONObject(i).getString("id").equals(row.getString("id")))return;next.put(row);if(saveChecked("meterReadings",next)){saved[0]=true;confirm.dismiss();if(source!=null)source.dismiss();render();Toast.makeText(this,"抄表紀錄已保存，可開帳單帶入讀數",Toast.LENGTH_LONG).show();}}catch(Exception e){error(e);}}));confirm.show();
+        }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();try{if(!row.getString("file").isEmpty())new File(photoDir(),row.getString("file")).delete();}catch(Exception ignored){}error(e);}
+    }
+    private void photoResult(int request,int result,Intent intent) {
+        String pending=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingMeter",null);if(pending==null)return;
+        try{JSONObject row=new JSONObject(pending);String file=row.getString("file");revokeUriPermission(photoUri(file),Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if(result!=RESULT_OK||(request==PICK_PHOTO&&(intent==null||intent.getData()==null))){new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();return;}
+            if(request==CAMERA_PHOTO){confirmMeterPhoto(row,null);return;}
+            Uri uri=intent.getData();Toast.makeText(this,"正在讀取照片…",Toast.LENGTH_SHORT).show();new Thread(()->{try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(new File(photoDir(),file))){if(in==null)throw new IOException();byte[] buffer=new byte[8192];int n;long total=0;while((n=in.read(buffer))!=-1){total+=n;if(total>BackupArchive.PHOTO_LIMIT)throw new IOException("照片超過25MB");out.write(buffer,0,n);}runOnUiThread(()->confirmMeterPhoto(row,null));}catch(Exception e){new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();runOnUiThread(()->error(new IllegalArgumentException("照片讀取失敗，請選擇25MB以下圖片")));}}).start();
+        }catch(Exception e){error(e);}
+    }
+
     private void exportBackup() {
-        try {
-            JSONObject backup = new JSONObject();
-            backup.put("format", "rental-catalog"); backup.put("version", 5);
-            for (String key : KEYS) backup.put(key, data(key));
-            pendingBackup = backup.toString(2);
-            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("application/json");
-            intent.putExtra(Intent.EXTRA_TITLE, "rental-catalog-" + LocalDate.now() + ".json");
-            startActivityForResult(intent, EXPORT);
-        } catch (Exception e) { Toast.makeText(this, "無法準備備份", Toast.LENGTH_LONG).show(); }
+        try {pendingBackup=fullBackup().toString(2);getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingBackup",pendingBackup).commit();Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip");intent.putExtra(Intent.EXTRA_TITLE,"rental-full-"+today()+".zip");startActivityForResult(intent,EXPORT);}catch(Exception e){error(e);}
     }
     private void importBackup() {
-        new AlertDialog.Builder(this).setMessage(display(String.valueOf("還原會替換所有資料（含帳單、收款、支出與帳戶）。請先匯出完整備份；v1沒有帳務，v2沒有支出與帳戶，v3沒有押金收付；v1–v4沒有退租結算。")))
-            .setNegativeButton("取消", null).setPositiveButton("選擇檔案", (d,w) -> {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
-                startActivityForResult(intent, IMPORT);
-            }).show();
+        new AlertDialog.Builder(this).setMessage("還原會替換全部資料及照片參照，請先匯出完整ZIP備份。舊JSON備份仍可讀取，但不含新版抄表照片；舊版本也可能不含押金或結算。").setNegativeButton("取消",null).setPositiveButton("選擇備份檔案",(d,w)->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),IMPORT)).show();
+    }
+    private void clearStaging(File dir) {File[] files=dir.listFiles();if(files!=null)for(File f:files)f.delete();dir.delete();}
+    private AlertDialog busy(String message) {AlertDialog d=new AlertDialog.Builder(this).setMessage(message).setCancelable(false).create();d.show();return d;}
+    private void exportArchive(Uri uri) {
+        String raw=pendingBackup;if(raw==null)raw=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingBackup",null);if(raw==null){error(new IllegalArgumentException("備份快照遺失，請重新匯出"));return;}
+        final String snapshot=raw;AlertDialog progress=busy("正在匯出帳務與照片，請稍候…");new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException();BackupArchive.write(out,new JSONObject(snapshot),photoDir());runOnUiThread(()->{progress.dismiss();pendingBackup=null;getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingBackup").commit();Toast.makeText(this,"完整ZIP備份已匯出，包含照片與帳務",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份匯出失敗："+e.getMessage()+"；請刪除未完成檔案並重新匯出"));});}}).start();
+    }
+    private void readArchive(Uri uri) {
+        File staging=new File(getCacheDir(),"restore-"+UUID.randomUUID());AlertDialog progress=busy("正在檢查備份與照片…");new Thread(()->{try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException();JSONObject backup=BackupArchive.read(in,staging);validateBackup(backup);for(String file:MeterReadings.files(backup.getJSONArray("meterReadings")))photoPreview(new File(staging,file)).recycle();
+            runOnUiThread(()->{progress.dismiss();new AlertDialog.Builder(this).setMessage("已驗證備份與照片。確定替換全部資料？舊v1–v5沒有抄表紀錄／照片；v1–v3沒有押金收付；v1–v4沒有退租結算。請保留目前的完整備份。").setNegativeButton("取消",(d,w)->clearStaging(staging)).setOnCancelListener(d->clearStaging(staging)).setPositiveButton("確認還原",(d,w)->restoreArchive(backup,staging)).show();});
+        }catch(Exception e){clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份無效或照片缺少："+e.getMessage()+"；原資料未替換"));});}}).start();
+    }
+    private void restoreArchive(JSONObject backup,File staging) {
+        AlertDialog progress=busy("正在還原帳務與照片…");new Thread(()->{List<File> added=new ArrayList<>();boolean committed=false;try{
+            JSONArray rows=backup.getJSONArray("meterReadings");for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);String old=row.getString("file");if(old.isEmpty())continue;String name=UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("照片還原失敗");added.add(destination);row.put("file",name);}
+            validateBackup(backup);android.content.SharedPreferences.Editor editor=getSharedPreferences("catalog",MODE_PRIVATE).edit();for(String key:KEYS)editor.putString(key,backup.getJSONArray(key).toString());if(!editor.commit())throw new IOException("帳務保存失敗");committed=true;clearStaging(staging);runOnUiThread(()->{progress.dismiss();propertyId="";unitId="";render();body.post(this::refreshPanels);Toast.makeText(this,"資料與照片已還原",Toast.LENGTH_LONG).show();});
+        }catch(Exception e){if(!committed)for(File file:added)file.delete();clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("還原失敗："+e.getMessage()));});}}).start();
     }
     private void validateBackup(JSONObject backup) throws Exception {
-        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 5))
+        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 6))
             throw new IllegalArgumentException();
         if(backup.getInt("version")==1) {backup.put("invoices",new JSONArray());backup.put("receipts",new JSONArray());}
         if(backup.getInt("version")<3)for(String key:new String[]{"accounts","expenses","transfers","reconciliations"})backup.put(key,new JSONArray());
         if(backup.getInt("version")<4)backup.put("deposits",new JSONArray());
         if(backup.getInt("version")<5)backup.put("settlements",new JSONArray());
+        if(backup.getInt("version")<6)backup.put("meterReadings",new JSONArray());
         java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
         java.util.Set<String> codes = new java.util.HashSet<>();
         JSONArray p = backup.getJSONArray("properties"), u = backup.getJSONArray("units"), l = backup.getJSONArray("leases");
@@ -1042,39 +1098,10 @@ public class MainActivity extends Activity {
         }}
         Ledger.validate(invoices,backup.getJSONArray("receipts"),leases);Bookkeeping.validate(backup);
     }
-    @Override protected void onActivityResult(int request, int result, Intent intent) {
-        super.onActivityResult(request, result, intent);
-        if (result != RESULT_OK || intent == null || intent.getData() == null) return;
-        Uri uri = intent.getData();
-        try {
-            if (request == EXPORT) {
-                if (pendingBackup == null) { JSONObject b=new JSONObject().put("format","rental-catalog").put("version",5);for(String key:KEYS)b.put(key,data(key));pendingBackup=b.toString(2); }
-                try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
-                    if (out == null) throw new IOException();
-                    out.write(pendingBackup.getBytes(StandardCharsets.UTF_8));
-                }
-                pendingBackup = null;
-                Toast.makeText(this, "備份已匯出，包含姓名及Gmail，請妥善保存", Toast.LENGTH_LONG).show();
-            } else if (request == IMPORT) {
-                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                try (InputStream in = getContentResolver().openInputStream(uri)) {
-                    if (in == null) throw new IOException();
-                    byte[] chunk = new byte[4096]; int n;
-                    while ((n=in.read(chunk)) != -1) { if (buffer.size()+n > 2000000) throw new IOException(); buffer.write(chunk,0,n); }
-                }
-                JSONObject backup = new JSONObject(buffer.toString("UTF-8")); validateBackup(backup);
-                new AlertDialog.Builder(this).setMessage(display(String.valueOf("已驗證備份，確定替換所有資料？v1還原會清空帳務，v2還原會清空帳戶、支出、轉帳與對帳；v1–v3都會清空押金收付；v1–v4都會清空退租結算。")))
-                    .setNegativeButton("取消", null).setPositiveButton("確認還原", (d,w) -> {
-                        try {
-                            android.content.SharedPreferences.Editor editor = getSharedPreferences("catalog",MODE_PRIVATE).edit();
-                            for (String key : KEYS) editor.putString(key,backup.getJSONArray(key).toString());
-                            if (!editor.commit()) throw new IOException();
-                            propertyId="";unitId="";render();body.post(this::refreshPanels); Toast.makeText(this,"還原完成",Toast.LENGTH_LONG).show();
-                        } catch (Exception e) { Toast.makeText(this,"還原未完成",Toast.LENGTH_LONG).show(); }
-                    }).show();
-            }
-        } catch (Exception e) { Toast.makeText(this,"檔案讀寫失敗或備份無效，請重試",Toast.LENGTH_LONG).show(); }
+    @Override protected void onActivityResult(int request,int result,Intent intent) {
+        super.onActivityResult(request,result,intent);
+        if(request==CAMERA_PHOTO||request==PICK_PHOTO){photoResult(request,result,intent);return;}
+        if(result!=RESULT_OK||intent==null||intent.getData()==null)return;
+        if(request==EXPORT)exportArchive(intent.getData());else if(request==IMPORT)readArchive(intent.getData());
     }
-
 }
-
