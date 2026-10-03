@@ -35,7 +35,7 @@ public final class Bookkeeping {
         LocalDate.parse(date);String start=account.getString("start"),id=account.getString("id");
         if(LocalDate.parse(date).isBefore(LocalDate.parse(start)))throw new IllegalArgumentException("對帳日早於帳戶起算日，無法計算餘額");
         long n=Ledger.money(account,"opening");
-        for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(id.equals(r.optString("accountId"))&&inRange(r,start,date))n=Math.addExact(n,Ledger.money(r,"amount"));}
+        for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.optBoolean("cash",true)&&id.equals(r.optString("accountId"))&&inRange(r,start,date))n=Math.addExact(n,Ledger.money(r,"amount"));}
         for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&id.equals(r.getString("accountId"))&&inRange(r,start,date))n=Math.subtractExact(n,Ledger.money(r,"amount"));}
         for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void")||!inRange(r,start,date))continue;long v=Ledger.money(r,"amount");
             if(id.equals(r.getString("fromId")))n=Math.subtractExact(n,v);if(id.equals(r.getString("toId")))n=Math.addExact(n,v);}
@@ -43,6 +43,9 @@ public final class Bookkeeping {
     }
     public static long balance(JSONObject account,String date,JSONArray receipts,JSONArray expenses,JSONArray transfers,JSONArray deposits) throws JSONException {
         return Math.addExact(balance(account,date,receipts,expenses,transfers),Deposits.cashflow(account.getString("id"),account.getString("start"),date,deposits));
+    }
+    public static long balance(JSONObject account,String date,JSONArray receipts,JSONArray expenses,JSONArray transfers,JSONArray deposits,JSONArray settlements) throws JSONException {
+        return Math.addExact(balance(account,date,receipts,expenses,transfers,deposits),Settlements.cashflow(account.getString("id"),account.getString("start"),date,settlements));
     }
     public static long expenseTotal(JSONArray expenses,String start,String end,String propertyId) throws JSONException {
         long n=0;for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(r.optBoolean("void")||!inRange(r,start,end))continue;
@@ -58,6 +61,7 @@ public final class Bookkeeping {
             account(r.getString("name"),type,r.getString("start"),Ledger.money(r,"opening"),r.optString("propertyId"));
             if(type.equals("現金"))cash++;if(!r.optString("propertyId").isEmpty()&&!propertyIds.contains(r.getString("propertyId")))throw new IllegalArgumentException("帳戶的不動產不存在");}
         if(cash>1)throw new IllegalArgumentException("共用現金帳戶只能有一個");
+        if(backup.has("settlements"))Settlements.validate(backup);
         if(backup.has("deposits")) {
             Set<String> leaseIds=new HashSet<>();JSONArray leases=backup.getJSONArray("leases");for(int i=0;i<leases.length();i++)leaseIds.add(leases.getJSONObject(i).getString("id"));
             Deposits.validate(backup.getJSONArray("deposits"),leaseIds,accountIds);
