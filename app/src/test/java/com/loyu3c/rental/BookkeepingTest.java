@@ -5,6 +5,12 @@ import static org.junit.Assert.*;
 import org.json.*;
 
 public class BookkeepingTest {
+    @Test public void linkedAccountIdPreventsDuplicateReceiptDespiteOldDisplayName() throws Exception {
+        JSONObject old=new JSONObject().put("accountId","BANK-A").put("account","原本棟別名稱"),next=new JSONObject().put("accountId","BANK-A").put("account","A帳戶");
+        assertTrue(Bookkeeping.sameReceiptAccount(old,next));
+        next.put("accountId","BANK-B").put("account","原本棟別名稱");assertFalse(Bookkeeping.sameReceiptAccount(old,next));
+        old.remove("accountId");assertTrue(Bookkeeping.sameReceiptAccount(old,next));
+    }
     private JSONObject account(String name,String type) throws Exception {return Bookkeeping.account(name,type,"2026-10-01",50000,"");}
     private JSONArray split(long a,long b) throws Exception {return new JSONArray().put(new JSONObject().put("propertyId","A").put("amount",a)).put(new JSONObject().put("propertyId","B").put("amount",b));}
     @Test public void threeBankWithdrawalsAreNotExpenses() throws Exception {

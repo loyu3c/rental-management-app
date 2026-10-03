@@ -7,6 +7,10 @@ import java.util.*;
 /** One cash movement per payment. Property splits are reporting dimensions only. */
 public final class Bookkeeping {
     public static final String[] CATEGORIES={"修繕","電梯保養","房貸扣款","其他費用"};
+    public static boolean sameReceiptAccount(JSONObject a,JSONObject b) {
+        String left=a.optString("accountId"),right=b.optString("accountId");
+        return !left.isEmpty()&&!right.isEmpty()?left.equals(right):a.optString("account").equals(b.optString("account"));
+    }
     public static JSONObject account(String name,String type,String start,long opening,String propertyId) throws JSONException {
         LocalDate.parse(start);if(name.trim().isEmpty()||!Arrays.asList("銀行","現金").contains(type)||opening<0||opening>1000000000L)throw new IllegalArgumentException("請檢查帳戶名稱、類型、起算日與期初餘額");
         return new JSONObject().put("id",UUID.randomUUID().toString()).put("name",name.trim()).put("type",type).put("start",start).put("opening",opening).put("propertyId",propertyId);
