@@ -4,7 +4,9 @@
 
 ## 專案狀態
 
-需求整理階段。尚未加入 Android 程式、GitHub Actions 或可安裝 APK；Google 同步與語音服務尚未設定。
+已加入 Android 介面預覽與 GitHub Actions APK 建置流程，首個成功建置通過 assembleDebug 與 lintDebug。預覽僅提供五個導覽畫面，尚無正式帳務、拍照、語音、Google同步及備份功能。
+
+下載方式與限制見 [APK預覽說明](docs/apk-preview.md)。正式簽署與保留資料更新尚待完成。
 
 ## 開發順序
 
