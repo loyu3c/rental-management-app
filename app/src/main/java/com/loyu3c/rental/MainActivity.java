@@ -316,14 +316,15 @@ public class MainActivity extends Activity {
         EditText deposit = number(layout, "約定押金，無押金填0");
         Spinner utilities = choice(layout, new String[]{"租客自行繳水電", "管理者代收水電"});
         EditText water = number(layout, "代收固定月水費，可留空待設定");
+        EditText rate = number(layout, "每度電費（只套用新開水電帳單）");rate.setText("5");
         if(original!=null) {
             tenant.setText(original.optString("tenant"));email.setText(original.optString("email"));start.setText(original.optString("start"));end.setText(original.optString("end"));
             rent.setText(original.optString("rent"));day.setText(original.optString("dueDay"));deposit.setText(original.optString("deposit"));
             cycle.setSelection(original.optString("cycle").equals("年繳")?1:0);utilities.setSelection(original.optString("utilities").equals("管理者代收水電")?1:0);
-            if(!original.isNull("water"))water.setText(original.optString("water"));
+            if(!original.isNull("water"))water.setText(original.optString("water"));rate.setText(original.optString("electricRate","5"));
             if(hasBilling(original.optString("id"))) {
-                layout.addView(text("已有帳單：只可修改姓名與Gmail。金額、租期保持原紀錄；換租客請新增租約。",14,Color.rgb(137,83,15)));
-                for(EditText f:new EditText[]{start,end,rent,day,deposit,water})f.setEnabled(false);cycle.setEnabled(false);utilities.setEnabled(false);
+                layout.addView(text("已有帳單：租期、租金、押金與繳款週期鎖定。姓名、Gmail和水電設定可修改；水電設定只套用新帳單。換租客請新增租約。",14,Color.rgb(137,83,15)));
+                for(EditText f:new EditText[]{start,end,rent,day,deposit})f.setEnabled(false);cycle.setEnabled(false);
             }
         }
         ScrollView scroll = new ScrollView(this); scroll.addView(layout);
@@ -339,8 +340,8 @@ public class MainActivity extends Activity {
             try { from = LocalDate.parse(start.getText().toString().trim()); to = LocalDate.parse(end.getText().toString().trim());
                 if (to.isBefore(from)) throw new IllegalArgumentException();
             } catch (Exception e) { end.setError("日期需為 YYYY-MM-DD，結束不得早於開始"); return; }
-            long monthly, due, held, waterAmount;
-            try { monthly = amount(rent, false); due = amount(day, false); held = amount(deposit, false); waterAmount = amount(water, true);
+            long monthly, due, held, waterAmount, electricRate;
+            try { monthly = amount(rent, false); due = amount(day, false); held = amount(deposit, false); waterAmount = amount(water, true); electricRate=amount(rate,false);
                 if (monthly <= 0 || due < 1 || due > 31) throw new IllegalArgumentException();
             } catch (Exception e) { rent.setError("請檢查租金、押金、水費及應繳日"); return; }
             JSONArray leases = data("leases"), units = data("units");
@@ -360,7 +361,7 @@ public class MainActivity extends Activity {
                 lease.put("unitCodeSnapshot", unit.optString("code")); lease.put("tenant", person); lease.put("email", mail);
                 lease.put("start", from.toString()); lease.put("end", to.toString()); lease.put("rent", monthly);
                 lease.put("dueDay", due); lease.put("cycle", cycle.getSelectedItem().toString()); lease.put("deposit", held);
-                lease.put("utilities", utilities.getSelectedItem().toString()); lease.put("electricRate", original==null?5:original.optLong("electricRate",5));
+                lease.put("utilities", utilities.getSelectedItem().toString()); lease.put("electricRate", electricRate);
                 lease.put("water", utilities.getSelectedItemPosition() == 0 || waterAmount == -1 ? JSONObject.NULL : waterAmount);
                 if(original==null)leases.put(lease);else for(int i=0;i<leases.length();i++)if(leases.optJSONObject(i).optString("id").equals(original.optString("id")))leases.put(i,lease);
                 if (save("leases", leases)) { dialog.dismiss(); render(); }
