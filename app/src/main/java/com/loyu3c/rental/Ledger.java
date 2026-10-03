@@ -6,6 +6,31 @@ import java.util.*;
 
 /** Integer TWD calculations. Receipts, rather than allocations, are cash inflows. */
 public final class Ledger {
+    public static JSONObject forMonth(JSONArray invoices, String leaseId, YearMonth month, String kind) throws JSONException {
+        for(int i=0;i<invoices.length();i++) {
+            JSONObject r=invoices.getJSONObject(i);
+            if(leaseId.equals(r.getString("leaseId"))&&month.toString().equals(r.getString("month"))&&kind.equals(r.getString("kind")))return r;
+        }
+        return null;
+    }
+    /** A single operation completes missing parts while preserving existing invoice IDs and receipts. */
+    public static JSONObject monthlyPlan(JSONObject lease, YearMonth month, long rent, long water, long previous, long current,
+                                         JSONArray invoices, JSONArray receipts) throws JSONException {
+        LocalDate start=LocalDate.parse(lease.getString("start")),end=LocalDate.parse(lease.getString("end"));
+        if(month.atEndOfMonth().isBefore(start)||month.atDay(1).isAfter(end))throw new IllegalArgumentException("月份不在租期內");
+        JSONArray added=new JSONArray();
+        JSONObject rental=forMonth(invoices,lease.getString("id"),month,"租金"),utility=forMonth(invoices,lease.getString("id"),month,"水電");
+        if(rental==null) {rental=invoice(lease,month,false,rent,0,0);added.put(rental);}
+        if(utility==null&&lease.getString("utilities").equals("管理者代收水電")) {
+            if(water<0)throw new IllegalArgumentException("請填固定月水費，不能將未知水費當作0");
+            JSONObject settings=new JSONObject(lease.toString()).put("water",water);
+            utility=invoice(settings,month,true,0,previous,current);added.put(utility);
+        }
+        long total=total(rental),paid=paid(rental.getString("id"),receipts);
+        if(utility!=null){total=Math.addExact(total,total(utility));paid=Math.addExact(paid,paid(utility.getString("id"),receipts));}
+        return new JSONObject().put("added",added).put("rent",rental).put("utility",utility==null?JSONObject.NULL:utility)
+            .put("total",total).put("paid",paid).put("remaining",Math.subtractExact(total,paid));
+    }
     public static long money(JSONObject row, String key) throws JSONException {
         Object raw = row.get(key);
         if (!(raw instanceof Integer || raw instanceof Long)) throw new IllegalArgumentException("金額必須是整數");

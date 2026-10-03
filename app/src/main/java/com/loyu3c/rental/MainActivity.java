@@ -401,17 +401,21 @@ public class MainActivity extends Activity {
             for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}
             for(int i=0;i<receipts.length();i++) {JSONObject r=receipts.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId"))){received+=Ledger.money(r,"amount");credit+=Ledger.money(r,"amount")-Ledger.allocated(r);}}
             card(lease.optString("tenant")+" · "+lease.optString("unitCodeSnapshot"),"帳單未付 $"+debt+"（含未到期）\n實際收款累計 $"+received+"\n尚未分配收款 $"+credit+"\n押金不包含於上述租金收款。");
-            action("＋ 開立租金／輸入每月電表",()->billingForm(lease));
+            action("＋ 建立當月帳單（租金＋水電）",()->billingForm(lease));
+            action("建立年繳租金",()->annualBillingForm(lease));
             action("＋ 登錄一筆合併匯款",()->receiptForm(lease));
             if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
-            List<JSONObject> rows=new ArrayList<>();for(int i=0;i<invoices.length();i++)if(lease.optString("id").equals(invoices.getJSONObject(i).getString("leaseId")))rows.add(invoices.getJSONObject(i));
-            rows.sort(Comparator.comparing((JSONObject r)->r.optString("month")).reversed().thenComparing(r->r.optString("kind")));
-            for(JSONObject r:rows) {
-                long paid=Ledger.paid(r.getString("id"),receipts),left=Ledger.total(r)-paid;
-                card(r.getString("month")+" · "+r.getString("kind"),"租金 $"+r.getLong("rent")+"／水費 $"+r.getLong("water")+"／電費 $"+r.getLong("electricity")
-                    +(r.getString("kind").equals("水電")?"\n電表 "+r.getLong("previous")+" → "+r.getLong("current")+" · 每度 $"+r.getLong("rate"):"")
-                    +"\n應繳 "+r.getString("due")+" · 已付 $"+paid+" · 未付 $"+left);
-                if(paid==0)action("撤銷 "+r.optString("month")+" 的"+r.optString("kind")+"帳單",()->deleteInvoice(r));
+            Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
+            for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))months.computeIfAbsent(r.getString("month"),key->new ArrayList<>()).add(r);}
+            for(Map.Entry<String,List<JSONObject>> entry:months.entrySet()) {
+                long rent=0,water=0,electric=0,paid=0,total=0;StringBuilder detail=new StringBuilder();boolean hasRent=false,hasUtility=false;
+                for(JSONObject r:entry.getValue()) {
+                    rent+=r.getLong("rent");water+=r.getLong("water");electric+=r.getLong("electricity");paid+=Ledger.paid(r.getString("id"),receipts);total+=Ledger.total(r);
+                    if(r.getString("kind").equals("租金"))hasRent=true;else{hasUtility=true;detail.append("\n電表 ").append(r.getLong("previous")).append(" → ").append(r.getLong("current")).append(" · 每度 $").append(r.getLong("rate"));}
+                }
+                String utility=hasUtility?"水費 $"+water+"／電費 $"+electric:lease.optString("utilities").equals("管理者代收水電")?"水電尚未建立":"水電自行繳納";
+                card(entry.getKey()+" · 當月帳單",(hasRent?"租金 $"+rent:"租金尚未建立")+"\n"+utility+detail+"\n已建立合計 $"+total+" · 已付 $"+paid+"\n尚需繳付 $"+(total-paid));
+                for(JSONObject r:entry.getValue())if(Ledger.paid(r.getString("id"),receipts)==0)action("撤銷 "+r.optString("month")+" 的"+r.optString("kind")+"項目",()->deleteInvoice(r));
             }
             for(int i=receipts.length()-1;i>=0;i--) {JSONObject r=receipts.getJSONObject(i);if(!lease.optString("id").equals(r.getString("leaseId")))continue;
                 card(r.getString("date")+" · 實收 $"+r.getLong("amount"),r.getString("account")+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
@@ -423,28 +427,86 @@ public class MainActivity extends Activity {
     }
     private void billingForm(JSONObject lease) {
         LinearLayout layout=form();
-        layout.addView(text("租金不會自動按天比例計算。首末月請填實際應收；年繳則逐月建立租金帳單。水電另外按月建立。",14,Color.DKGRAY));
+        layout.addView(text("租金、水費與電費在這裡一起建立；已存在的帳單沿用原金額，不會重複開立。首末月租金請填實際應收。",14,Color.DKGRAY));
         EditText month=field(layout,"帳單月份 YYYY-MM");month.setText(YearMonth.from(today()).toString());
-        Spinner kind=choice(layout,new String[]{"單月租金","年繳租金（最多12個月）","當月水電與電表"});
-        EditText rent=number(layout,"應收月租金");rent.setText(lease.optString("rent"));
-        EditText prior=number(layout,"上期／起始電表讀數"),current=number(layout,"本期電表讀數");
-        layout.addView(text("僅選當月水電時需要讀數；水費依租約。拍照尚未啟用。跨租客讀數不會自動沿用。",14,Color.DKGRAY));
+        TextView rentLabel=text("租金",15,Color.DKGRAY);layout.addView(rentLabel);
+        EditText rent=number(layout,"本月租金");rent.setText(lease.optString("rent"));
+        LinearLayout utilities=form();layout.addView(utilities);
+        utilities.addView(text("水費與電表（照片尚未啟用）",15,Color.DKGRAY));
+        EditText water=number(utilities,"固定月水費，未知請先確認"),prior=number(utilities,"上期／起始電表讀數"),current=number(utilities,"本期電表讀數");
+        TextView rateLabel=text("",14,Color.DKGRAY);utilities.addView(rateLabel);
+        TextView summary=text("",16,Color.rgb(90,61,37));layout.addView(summary);
+        boolean[] refreshing={false};
+        Runnable update=()->{
+            if(refreshing[0])return;
+            try {
+                YearMonth ym=YearMonth.parse(month.getText().toString().trim());JSONArray invoices=data("invoices");
+                JSONObject existingRent=Ledger.forMonth(invoices,lease.optString("id"),ym,"租金"),existingUtility=Ledger.forMonth(invoices,lease.optString("id"),ym,"水電");
+                boolean collect=lease.optString("utilities").equals("管理者代收水電"),needUtility=collect&&existingUtility==null;
+                JSONObject plan=Ledger.monthlyPlan(lease,ym,existingRent==null?amount(rent,false):0,needUtility?amount(water,true):0,needUtility?amount(prior,false):0,needUtility?amount(current,false):0,invoices,data("receipts"));
+                JSONObject r=plan.getJSONObject("rent"),u=plan.optJSONObject("utility");
+                summary.setText("租金 $"+r.getLong("rent")+(u==null?"\n水電：租客自行繳納":"\n水費 $"+u.getLong("water")+" · 電費 $"+u.getLong("electricity"))
+                    +"\n本月帳單合計 $"+plan.getLong("total")+"\n已分配收款 $"+plan.getLong("paid")+"\n本月尚需繳付 $"+plan.getLong("remaining"));
+            }catch(Exception e){summary.setText("請填完整月份、金額與電表讀數，完成後顯示本月合計。\n水費未知請先確認；帳單不代表已收款。");}
+        };
+        Runnable loadMonth=()->{
+            try {
+                YearMonth ym=YearMonth.parse(month.getText().toString().trim());JSONArray invoices=data("invoices"),receipts=data("receipts");
+                JSONObject r=Ledger.forMonth(invoices,lease.optString("id"),ym,"租金"),u=Ledger.forMonth(invoices,lease.optString("id"),ym,"水電");
+                refreshing[0]=true;
+                rent.setEnabled(r==null);rent.setText(r==null?lease.optString("rent"):r.optString("rent"));
+                rentLabel.setText(r==null?"租金（尚未建立）":"租金帳單已建立 · 已付 $"+Ledger.paid(r.getString("id"),receipts)+"，沿用原帳單");
+                boolean collect=lease.optString("utilities").equals("管理者代收水電");utilities.setVisibility(collect||u!=null?android.view.View.VISIBLE:android.view.View.GONE);
+                water.setEnabled(u==null);prior.setEnabled(u==null);current.setEnabled(u==null);
+                water.setText(u!=null?u.optString("water"):lease.isNull("water")?"":lease.optString("water"));
+                prior.setText(u!=null?u.optString("previous"):"");current.setText(u!=null?u.optString("current"):"");
+                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數");
+            }catch(Exception ignored){}finally{refreshing[0]=false;}update.run();
+        };
+        TextWatcher totals=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){update.run();}public void afterTextChanged(Editable e){}};
+        for(EditText f:new EditText[]{rent,water,prior,current})f.addTextChangedListener(totals);
+        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){loadMonth.run();}public void afterTextChanged(Editable e){}});
+        loadMonth.run();
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("開立帳單").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("建立當月帳單").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽整筆帳單",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try {
-            YearMonth from=YearMonth.parse(month.getText().toString().trim());JSONArray invoices=data("invoices"),added=new JSONArray();
-            int n=kind.getSelectedItemPosition()==1?12:1;
-            for(int i=0;i<n;i++) {
-                YearMonth target=from.plusMonths(i);
-                if(i>0&&target.atDay(1).isAfter(LocalDate.parse(lease.getString("end"))))break;
-                JSONObject row=Ledger.invoice(lease,target,kind.getSelectedItemPosition()==2,kind.getSelectedItemPosition()==2?0:amount(rent,false),kind.getSelectedItemPosition()==2?amount(prior,false):0,kind.getSelectedItemPosition()==2?amount(current,false):0);
-                Ledger.addUnique(invoices,row);added.put(row);
+            YearMonth ym=YearMonth.parse(month.getText().toString().trim());JSONArray before=data("invoices");
+            JSONObject existingRent=Ledger.forMonth(before,lease.optString("id"),ym,"租金"),existingUtility=Ledger.forMonth(before,lease.optString("id"),ym,"水電");
+            boolean needUtility=lease.optString("utilities").equals("管理者代收水電")&&existingUtility==null;
+            JSONObject plan=Ledger.monthlyPlan(lease,ym,existingRent==null?amount(rent,false):0,needUtility?amount(water,true):0,needUtility?amount(prior,false):0,needUtility?amount(current,false):0,before,data("receipts"));
+            JSONArray added=plan.getJSONArray("added");JSONObject r=plan.getJSONObject("rent"),u=plan.optJSONObject("utility");
+            String preview=ym+"\n租金 $"+r.getLong("rent")+(u==null?"\n水電自行繳納":"\n水費 $"+u.getLong("water")+"\n電費 $"+u.getLong("electricity"))
+                +"\n合計 $"+plan.getLong("total")+"\n已付 $"+plan.getLong("paid")+" · 尚需繳付 $"+plan.getLong("remaining")+"\n"+(added.length()==0?"此月份已完整建立，無需重複開單。":"只新增尚未建立的項目，不新增收款紀錄。");
+            AlertDialog.Builder confirm=new AlertDialog.Builder(this).setMessage(preview).setNegativeButton("返回",null);
+            if(added.length()>0)confirm.setPositiveButton("確認建立",(d,b)->{try{
+                JSONArray latest=data("invoices");if(!latest.toString().equals(before.toString()))throw new IllegalArgumentException("帳單已改變，請重新預覽。");
+                for(int i=0;i<added.length();i++)Ledger.addUnique(latest,added.getJSONObject(i));
+                if(save("invoices",latest)){dialog.dismiss();render();Toast.makeText(this,"本月帳單已建立，請重新開啟明細查看",Toast.LENGTH_LONG).show();}
+            }catch(Exception e){error(e);}});
+            confirm.show();
+        }catch(Exception e){error(e);}}));dialog.show();
+    }
+    private void annualBillingForm(JSONObject lease) {
+        LinearLayout layout=form();layout.addView(text("一次建立最多12個月租金帳單；水電仍按月從「建立當月帳單」處理。已建立月份會跳過。年繳須另外登錄實際匯款才會顯示已付。",14,Color.DKGRAY));
+        EditText month=field(layout,"開始月份 YYYY-MM");month.setText(YearMonth.from(today()).toString());
+        EditText rent=number(layout,"每月實際租金");rent.setText(lease.optString("rent"));
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("建立年繳租金").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try {
+            YearMonth from=YearMonth.parse(month.getText().toString().trim());JSONArray invoices=data("invoices"),added=new JSONArray();long monthly=amount(rent,false);int skipped=0;
+            // Validate start even when its invoice exists.
+            Ledger.invoice(lease,from,false,monthly,0,0);
+            for(int i=0;i<12;i++) {
+                YearMonth target=from.plusMonths(i);if(target.atDay(1).isAfter(LocalDate.parse(lease.getString("end"))))break;
+                if(Ledger.forMonth(invoices,lease.getString("id"),target,"租金")!=null){skipped++;continue;}
+                JSONObject row=Ledger.invoice(lease,target,false,monthly,0,0);Ledger.addUnique(invoices,row);added.put(row);
             }
+            if(added.length()==0)throw new IllegalArgumentException("這段期間的租金帳單已建立，不重複開單。");
             long sum=0;for(int i=0;i<added.length();i++)sum+=Ledger.total(added.getJSONObject(i));
-            String preview=added.length()+" 張"+added.getJSONObject(0).getString("kind")+"帳單，合計 $"+sum+"。\n"+from+" 起；不代表已收款。\n首末月、年繳折扣或不足12月時，請確認每月金額正確。";
-            new AlertDialog.Builder(this).setMessage(preview).setNegativeButton("返回修改",null).setPositiveButton("確認開立",(d,b)->{try{
+            StringBuilder lines=new StringBuilder();for(int i=0;i<added.length();i++)lines.append(added.getJSONObject(i).getString("month")).append("  $ ").append(monthly).append("\n");
+            new AlertDialog.Builder(this).setMessage(lines+"新增租金合計 $"+sum+"\n沿用 "+skipped+" 個已建立月份。首末月或折扣請確認實際金額。此步驟不代表收款。").setNegativeButton("返回修改",null).setPositiveButton("確認建立",(d,b)->{try{
                 JSONArray latest=data("invoices");for(int i=0;i<added.length();i++)Ledger.addUnique(latest,added.getJSONObject(i));
-                if(save("invoices",latest)){dialog.dismiss();render();Toast.makeText(this,"帳單已建立，重新開啟租約可查看",Toast.LENGTH_LONG).show();}
+                if(save("invoices",latest)){dialog.dismiss();render();Toast.makeText(this,"年繳租金帳單已建立",Toast.LENGTH_LONG).show();}
             }catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
     }

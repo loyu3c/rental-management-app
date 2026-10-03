@@ -7,6 +7,32 @@ import java.time.YearMonth;
 import java.util.*;
 
 public class LedgerTest {
+    @Test public void monthlyPlanCombinesAmountsWithoutChangingExistingInvoices() throws Exception {
+        JSONObject l=lease("L");JSONArray invoices=new JSONArray(),receipts=new JSONArray();
+        JSONObject plan=Ledger.monthlyPlan(l,YearMonth.of(2026,2),10000,250,100,160,invoices,receipts);
+        assertEquals(10550,plan.getLong("total"));assertEquals(2,plan.getJSONArray("added").length());assertEquals(0,invoices.length());
+        invoices=new JSONArray(plan.getJSONArray("added").toString());
+        String rentalId=plan.getJSONObject("rent").getString("id"),utilityId=plan.getJSONObject("utility").getString("id");
+        receipts.put(Ledger.receipt("L","2026-02-05","A",10300,"",invoices,receipts));
+        JSONObject again=Ledger.monthlyPlan(l,YearMonth.of(2026,2),99999,99999,999,1,invoices,receipts);
+        assertEquals(0,again.getJSONArray("added").length());assertEquals(10550,again.getLong("total"));assertEquals(250,again.getLong("remaining"));
+        assertEquals(rentalId,again.getJSONObject("rent").getString("id"));assertEquals(utilityId,again.getJSONObject("utility").getString("id"));
+    }
+    @Test public void annualRentPaidMonthlyPlanAddsOnlyUtilities() throws Exception {
+        JSONObject l=lease("L");JSONArray invoices=new JSONArray(),receipts=new JSONArray();
+        for(int m=1;m<=12;m++)invoices.put(Ledger.invoice(l,YearMonth.of(2026,m),false,10000,0,0));
+        receipts.put(Ledger.receipt("L","2026-01-05","A",120000,"",invoices,receipts));
+        JSONObject plan=Ledger.monthlyPlan(l,YearMonth.of(2026,2),10000,250,100,160,invoices,receipts);
+        assertEquals(1,plan.getJSONArray("added").length());assertEquals("水電",plan.getJSONArray("added").getJSONObject(0).getString("kind"));
+        assertEquals(10000,plan.getLong("paid"));assertEquals(550,plan.getLong("remaining"));assertEquals(1,receipts.length());
+    }
+    @Test public void selfPaidUtilitiesAndUnknownWaterMonthlyRules() throws Exception {
+        JSONObject l=lease("L");l.put("utilities","租客自行繳水電");
+        JSONObject plan=Ledger.monthlyPlan(l,YearMonth.of(2026,1),10000,-1,-1,-1,new JSONArray(),new JSONArray());
+        assertEquals(1,plan.getJSONArray("added").length());assertTrue(plan.isNull("utility"));assertEquals(10000,plan.getLong("total"));
+        l.put("utilities","管理者代收水電");
+        try{Ledger.monthlyPlan(l,YearMonth.of(2026,1),10000,-1,100,160,new JSONArray(),new JSONArray());fail();}catch(IllegalArgumentException expected){}
+    }
     private JSONObject lease(String id) throws Exception {
         return new JSONObject().put("id",id).put("start","2026-01-01").put("end","2026-12-31")
             .put("tenant","測試").put("unitCodeSnapshot","R1401").put("dueDay",31)
