@@ -608,6 +608,7 @@ public class MainActivity extends Activity {
         }
         if(rows.size()>15)card("顯示最近15筆","其他紀錄可在帳戶流水、支出報表及完整備份查看。");
     }
+    private String receiptTenant(JSONObject receipt) {JSONObject lease=find("leases",receipt.optString("leaseId"));return lease==null?"":lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant");}
     private String accountName(String id) {JSONObject a=find("accounts",id);return a==null?"帳戶未設定":a.optString("name");}
     private String propertyName(String id) {JSONObject p=find("properties",id);return p==null?"不動產不存在":p.optString("name");}
     private long balance(JSONObject account,String date) throws JSONException {return Bookkeeping.balance(account,date,data("receipts"),data("expenses"),data("transfers"));}
@@ -701,11 +702,11 @@ public class MainActivity extends Activity {
                 action("輸入存摺／實際現金餘額對帳",()->reconciliationForm(account,end));
                 List<JSONObject> lines=new ArrayList<>();
                 JSONArray receipts=data("receipts"),expenses=data("expenses"),transfers=data("transfers");
-                for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(id.equals(r.optString("accountId")))lines.add(new JSONObject().put("date",r.getString("date")).put("label","收款 "+r.getString("account")).put("delta",r.getLong("amount")).put("note",r.optString("note")));}
-                for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(id.equals(r.getString("accountId"))&&!r.optBoolean("void"))lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("category")).put("delta",-r.getLong("amount")).put("note",r.getString("description")));}
-                for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void"))continue;boolean from=id.equals(r.getString("fromId")),to=id.equals(r.getString("toId"));if(from||to)lines.add(new JSONObject().put("date",r.getString("date")).put("label","轉帳 "+accountName(r.getString("fromId"))+" → "+accountName(r.getString("toId"))).put("delta",from?-r.getLong("amount"):r.getLong("amount")).put("note",r.getString("description")));}
+                for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(id.equals(r.optString("accountId")))lines.add(new JSONObject().put("date",r.getString("date")).put("label","收款 "+receiptTenant(r)+" · "+r.getString("account")).put("delta",r.getLong("amount")).put("note",r.optString("note")));}
+                for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(id.equals(r.getString("accountId"))&&!r.optBoolean("void"))lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("category")).put("delta",-r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","expenses").put("sourceId",r.getString("id")));}
+                for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void"))continue;boolean from=id.equals(r.getString("fromId")),to=id.equals(r.getString("toId"));if(from||to)lines.add(new JSONObject().put("date",r.getString("date")).put("label","轉帳 "+accountName(r.getString("fromId"))+" → "+accountName(r.getString("toId"))).put("delta",from?-r.getLong("amount"):r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","transfers").put("sourceId",r.getString("id")));}
                 lines.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());int n=0;
-                for(JSONObject r:lines) {if(LocalDate.parse(r.getString("date")).isAfter(LocalDate.parse(end)))continue;long delta=r.getLong("delta");card(r.getString("date")+" · "+r.getString("label"),(delta>=0?"+":"")+delta+"\n"+r.getString("note")+(LocalDate.parse(r.getString("date")).isBefore(LocalDate.parse(start))?"\n歷史補登，未加減期初餘額":""));n++;}
+                for(JSONObject r:lines) {if(LocalDate.parse(r.getString("date")).isAfter(LocalDate.parse(end)))continue;long delta=r.getLong("delta");card(r.getString("date")+" · "+r.getString("label"),(delta>=0?"+":"")+delta+"\n"+r.getString("note")+(LocalDate.parse(r.getString("date")).isBefore(LocalDate.parse(start))?"\n歷史補登，未加減期初餘額":""));n++;if(r.has("sourceKey")){JSONObject source=find(r.optString("sourceKey"),r.optString("sourceId"));if(source!=null)action("撤銷此筆錯誤紀錄",()->voidMovement(r.optString("sourceKey"),source));}}
                 if(n==0)card("尚無此日期前的流水","請記帳或對應舊收款；未有紀錄不代表存摺沒有交易。");
                 JSONArray checks=data("reconciliations");for(int i=checks.length()-1;i>=0;i--){JSONObject r=checks.getJSONObject(i);if(!id.equals(r.getString("accountId")))continue;
                     long current=balance(account,r.getString("date"));card("對帳紀錄 "+r.getString("date"),"實際 $"+r.getLong("actual")+" · 當時帳面 $"+r.getLong("book")+"\n當時差額 $"+(r.getLong("actual")-r.getLong("book"))+"\n依目前登錄重算 $"+current+" · 差額 $"+(r.getLong("actual")-current)+"\n"+r.optString("note"));}
@@ -753,7 +754,7 @@ public class MainActivity extends Activity {
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
         Runnable refresh=()->{list.removeAllViews();LinearLayout previous=body;body=list;try{
             JSONArray receipts=data("receipts");int count=0;for(int i=receipts.length()-1;i>=0;i--){JSONObject r=receipts.getJSONObject(i);if(!include.isChecked()&&!r.optString("accountId").isEmpty())continue;
-                String label=r.getString("date")+" · "+r.getString("account")+" · $"+r.getLong("amount");if(!label.contains(search.getText().toString().trim()))continue;count++;
+                String label=r.getString("date")+" · "+receiptTenant(r)+" · "+r.getString("account")+" · $"+r.getLong("amount");if(!label.contains(search.getText().toString().trim()))continue;count++;
                 tapCard(label,"目前對應："+accountName(r.optString("accountId")),()->receiptAccountForm(r,accounts));}
             if(count==0)card("沒有符合的收款","已對應收款依實際日期與起算日計入帳面。可勾選顯示已對應紀錄或調整搜尋。");
         }catch(Exception e){error(e);}finally{body=previous;}};
