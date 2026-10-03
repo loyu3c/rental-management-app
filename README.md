@@ -1,26 +1,22 @@
 # 包租代管 App
 
-以 Android 手機管理租約、收租、水電、押金、修繕、房貸及資金流水，並同步 Google 試算表。
+以 Android 手機管理不動產、租約與收租，逐步加入押金、修繕、房貸、資金流水及 Google 試算表報表。
 
 ## 專案狀態
 
-已加入 Android 介面預覽與 GitHub Actions APK 建置流程，首個成功建置通過 assembleDebug 與 lintDebug。預覽僅提供五個導覽畫面，尚無正式帳務、拍照、語音、Google同步及備份功能。
+0.5.0-preview 是整合測試版，已實作手機本地不動產／單位／租約建檔、分層導覽、搜尋篩選、帳單、每月電表與水電計算、年繳租金單、合併匯款分配、部分繳款與完整備份。GitHub Actions 使用固定簽署金鑰產出 APK。
 
-下載方式與限制見 [APK預覽說明](docs/apk-preview.md)。正式簽署與保留資料更新尚待完成。
+支出、銀行餘額、押金收付、退租結算、拍照、語音、Google 同步仍未啟用。尚未完成實機更新及操作驗收，請先使用測試資料。
 
-## 開發順序
+- [下載及測試說明](docs/apk-preview.md)
+- [本次規格與驗收](docs/changes/integrated-rent-batch.md)
+- [已確認需求](docs/requirements.md)
+- [規格驅動開發流程](docs/development-process.md)
 
-1. 確認資料模型、手機畫面與驗收案例。
-2. 建立 Android 專案與 GitHub Actions APK 建置流程。
-3. 完成租約、帳單、收款、支出分攤、押金與對帳。
-4. 加入電表拍照與語音帳務草稿。
-5. 完成 Google 報表同步、存取權限與失敗重試。
-6. 設定固定 APK 簽署、備份與更新驗證，提供手機實際驗收。
+## 下一階段
 
-## 文件
-
-- [已確認需求與驗收條件](docs/requirements.md)
+確認本版操作後，繼續完成支出分攤、房貸、零用金與押金收付，再加入電表拍照、語音草稿及 Google 唯讀報表同步。每批先定規格，合併相關功能並通過檢查後再提供 APK 測試。
 
 ## 原則
 
-App 是正式帳務來源，Google 試算表為唯讀報表。帳務與照片不提交到 GitHub；憑證與簽署密鑰使用外部安全設定，不寫入程式或 APK。
+App 為帳務來源；Google 試算表規劃為唯讀報表。帳務、照片與備份不提交到 GitHub；簽署密鑰保存於 GitHub Secrets，不寫入程式或 APK。

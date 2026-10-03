@@ -30,4 +30,4 @@ requirements.md、tenancy-and-parking.md記錄業務規則；mobile-design.md為
 
 ## 當前狀態
 
-0.1.0-preview僅五個文字導覽畫面，編譯及lint通過；使用者已安裝並回饋介面樸素。下一變更先選視覺方向，再開發實際建檔功能。
+0.5.0-preview 已加入暖色分層建檔、租約、帳單、抄表、年繳與合併收款及完整備份；固定簽署 APK、帳務測試與 lint 已通過 GitHub Actions。實機操作及覆蓋保留資料更新尚待驗證；Google、拍照、語音、支出、押金收付仍未啟用。

@@ -31,7 +31,7 @@ Google、拍照、語音及真正支出記帳仍未啟用。請以測試資料�
 - [x] 合併收款、部分繳款、未分配與撤銷錯誤。
 - [x] v2 完整備份與 v1 相容。
 - [x] 金融規則單元測試與 CI 串接。
-- [ ] GitHub Actions 測試、編譯及 lint 結果。
+- [x] GitHub Actions 測試、編譯及 lint 通過。
 - [ ] 使用者實機驗收與固定簽署覆蓋更新。
 
 ## 驗收案例
@@ -44,4 +44,8 @@ Google、拍照、語音及真正支出記帳仍未啟用。請以測試資料�
 6. Given 收款超額尚未分配，When 後續建立帳單並分配，Then 原收款總额與筆數保持不變。
 7. Given 備份有跨租約分配或超額分配，When 還原，Then 驗證失敗、不替換手機資料。
 
-自我 review；沒有宣稱獨立 Claude review。CI 及實機結果待補，CI 不能代替手機操作驗收。
+自我 review；沒有宣稱獨立 Claude review。程式 commit: `8fb6cb5e90b62735707f71f0b52bc1bd51bc86e6`。
+
+2026-10-03，[固定簽署流程](https://github.com/loyu3c/rental-management-app/actions/runs/37122331802)通過 testReleaseUnitTest、assembleRelease、lintRelease，產出固定簽署 APK；Debug Checks 同樣成功。8 個帳務單元測試涵蓋合併部分付款、年繳、租客隔離、重複帳單、水費未知／倒退電表、匯入錯誤分配、整數金額／租期及後續預收分配。
+
+實機操作、外部檔案讀寫及覆蓋保留資料更新仍待使用者驗證。CI 不能代替手機操作驗收。
