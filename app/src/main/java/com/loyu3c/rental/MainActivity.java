@@ -11,6 +11,9 @@ import android.app.AlertDialog;
 import org.json.*;
 import java.util.UUID;
 import java.util.Locale;
+import java.time.LocalDate;
+import android.text.InputType;
+import android.util.Patterns;
 
 public class MainActivity extends Activity {
     private LinearLayout body;
@@ -114,7 +117,7 @@ public class MainActivity extends Activity {
         layout.setPadding(dp(20), dp(8), dp(20), dp(8)); return layout;
     }
     private void propertyScreen() {
-        card("不動產與出租單位", "建築物、土地、房間與獨立車格。代號可用 R1401、C1。\n目前只提供新增與查看；租約及備份尚未啟用，請先用測試資料。");
+        card("不動產與出租單位", "建築物、土地、房間與獨立車格。代號可用 R1401、C1。\n可修改名称及代號、建立租約；備份尚未啟用，請先用測試資料。");
         action("＋ 新增不動產", this::addProperty);
         JSONArray properties = data("properties"), units = data("units");
         if (properties.length() == 0) { card("尚未建檔", "先新增建築物或土地，再建立出租單位。"); return; }
@@ -130,8 +133,24 @@ public class MainActivity extends Activity {
             }
             if (count == 0) detail.append("\n尚無出租單位");
             card(p.optString("name"), detail.toString());
+            final JSONObject currentProperty = p;
+            action("修改名稱", () -> editName("properties", currentProperty, "name", "不動產名稱"));
             final String id = p.optString("id"), name = p.optString("name");
             action("＋ " + name + "：新增出租單位", () -> addUnit(id, name));
+            for (int j = 0; j < units.length(); j++) {
+                final JSONObject u = units.optJSONObject(j);
+                if (!id.equals(u.optString("propertyId"))) continue;
+                action(u.optString("code") + "：修改代號", () -> editName("units", u, "code", "出租代號"));
+                action(u.optString("code") + "：新增租約", () -> addLease(u));
+                JSONArray leases = data("leases");
+                for (int k = 0; k < leases.length(); k++) {
+                    JSONObject l = leases.optJSONObject(k);
+                    if (u.optString("id").equals(l.optString("unitId"))) card(u.optString("code") + " · " + l.optString("tenant"),
+                        l.optString("start") + " ～ " + l.optString("end") + "\\n月租 $" + l.optLong("rent") + " · " + l.optString("cycle") +
+                        "\\n約定押金 $" + l.optLong("deposit") + "（不是已收款）" + "\\n" + l.optString("email") +
+                        "\\n" + l.optString("utilities") + (l.isNull("water") ? " · 水費待設定" : " · 水費 $" + l.optLong("water")));
+                }
+            }
         }
     }
     private void addProperty() {
@@ -178,6 +197,90 @@ public class MainActivity extends Activity {
             } catch (JSONException e) { Toast.makeText(this, "資料格式錯誤", Toast.LENGTH_LONG).show(); }
         }));
         dialog.show();
+    }
+
+
+    private void editName(String key, JSONObject original, String column, String title) {
+        LinearLayout layout = form(); EditText value = field(layout, title);
+        value.setText(original.optString(column));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("修改" + title).setView(layout)
+            .setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
+        dialog.setOnShowListener(v -> dialog.getButton(-1).setOnClickListener(w -> {
+            String next = value.getText().toString().trim();
+            if (next.isEmpty()) { value.setError("不可空白"); return; }
+            JSONArray items = data(key);
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                boolean scope = key.equals("properties") || item.optString("propertyId").equals(original.optString("propertyId"));
+                if (!item.optString("id").equals(original.optString("id")) && scope && item.optString(column).equalsIgnoreCase(next)) {
+                    value.setError("名稱或代號已存在"); return;
+                }
+            }
+            try {
+                for (int i = 0; i < items.length(); i++) if (items.optJSONObject(i).optString("id").equals(original.optString("id")))
+                    items.optJSONObject(i).put(column, next);
+                if (save(key, items)) { dialog.dismiss(); render(); }
+            } catch (JSONException e) { value.setError("保存格式錯誤"); }
+        })); dialog.show();
+    }
+    private EditText number(LinearLayout layout, String hint) {
+        EditText input = field(layout, hint); input.setInputType(InputType.TYPE_CLASS_NUMBER); return input;
+    }
+    private long amount(EditText field, boolean optional) {
+        String value = field.getText().toString().trim();
+        if (value.isEmpty() && optional) return -1;
+        long result = Long.parseLong(value);
+        if (result < 0 || result > 1000000000L) throw new IllegalArgumentException();
+        return result;
+    }
+    private void addLease(JSONObject unit) {
+        LinearLayout layout = form();
+        EditText tenant = field(layout, "租客姓名"), email = field(layout, "查看報表用 Gmail");
+        EditText start = field(layout, "起租日 YYYY-MM-DD"), end = field(layout, "到期日 YYYY-MM-DD");
+        EditText rent = number(layout, "月租金（年繳也填每月金額）"), day = number(layout, "每月應繳日 1–31");
+        Spinner cycle = choice(layout, new String[]{"月繳", "年繳"});
+        EditText deposit = number(layout, "約定押金，無押金填0");
+        Spinner utilities = choice(layout, new String[]{"租客自行繳水電", "管理者代收水電"});
+        EditText water = number(layout, "代收固定月水費，可留空待設定");
+        ScrollView scroll = new ScrollView(this); scroll.addView(layout);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(unit.optString("code") + "：租約")
+            .setView(scroll).setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
+        dialog.setOnShowListener(v -> dialog.getButton(-1).setOnClickListener(w -> {
+            String person = tenant.getText().toString().trim(), mail = email.getText().toString().trim();
+            if (person.isEmpty()) { tenant.setError("請填姓名"); return; }
+            if (!Patterns.EMAIL_ADDRESS.matcher(mail).matches() || !mail.toLowerCase(Locale.ROOT).endsWith("@gmail.com")) {
+                email.setError("請填有效 Gmail"); return;
+            }
+            LocalDate from, to;
+            try { from = LocalDate.parse(start.getText().toString().trim()); to = LocalDate.parse(end.getText().toString().trim());
+                if (to.isBefore(from)) throw new IllegalArgumentException();
+            } catch (Exception e) { end.setError("日期需為 YYYY-MM-DD，結束不得早於開始"); return; }
+            long monthly, due, held, waterAmount;
+            try { monthly = amount(rent, false); due = amount(day, false); held = amount(deposit, false); waterAmount = amount(water, true);
+                if (monthly <= 0 || due < 1 || due > 31) throw new IllegalArgumentException();
+            } catch (Exception e) { rent.setError("請檢查租金、押金、水費及應繳日"); return; }
+            JSONArray leases = data("leases"), units = data("units");
+            for (int i = 0; i < leases.length(); i++) {
+                JSONObject old = leases.optJSONObject(i); JSONObject oldUnit = null;
+                for (int j = 0; j < units.length(); j++) if (units.optJSONObject(j).optString("id").equals(old.optString("unitId")))
+                    oldUnit = units.optJSONObject(j);
+                boolean same = unit.optString("id").equals(old.optString("unitId"));
+                boolean whole = oldUnit != null && unit.optString("propertyId").equals(oldUnit.optString("propertyId"))
+                    && (unit.optString("type").equals("整棟") || oldUnit.optString("type").equals("整棟"));
+                if ((same || whole) && !to.isBefore(LocalDate.parse(old.optString("start"))) && !from.isAfter(LocalDate.parse(old.optString("end")))) {
+                    end.setError("租期與既有租約重疊"); return;
+                }
+            }
+            try {
+                JSONObject lease = new JSONObject(); lease.put("id", UUID.randomUUID().toString()); lease.put("unitId", unit.optString("id"));
+                lease.put("unitCodeSnapshot", unit.optString("code")); lease.put("tenant", person); lease.put("email", mail);
+                lease.put("start", from.toString()); lease.put("end", to.toString()); lease.put("rent", monthly);
+                lease.put("dueDay", due); lease.put("cycle", cycle.getSelectedItem().toString()); lease.put("deposit", held);
+                lease.put("utilities", utilities.getSelectedItem().toString()); lease.put("electricRate", 5);
+                lease.put("water", utilities.getSelectedItemPosition() == 0 || waterAmount == -1 ? JSONObject.NULL : waterAmount);
+                leases.put(lease); if (save("leases", leases)) { dialog.dismiss(); render(); }
+            } catch (JSONException e) { tenant.setError("保存格式錯誤"); }
+        })); dialog.show();
     }
 
 }
