@@ -41,6 +41,9 @@ public final class Bookkeeping {
             if(id.equals(r.getString("fromId")))n=Math.subtractExact(n,v);if(id.equals(r.getString("toId")))n=Math.addExact(n,v);}
         return n;
     }
+    public static long balance(JSONObject account,String date,JSONArray receipts,JSONArray expenses,JSONArray transfers,JSONArray deposits) throws JSONException {
+        return Math.addExact(balance(account,date,receipts,expenses,transfers),Deposits.cashflow(account.getString("id"),account.getString("start"),date,deposits));
+    }
     public static long expenseTotal(JSONArray expenses,String start,String end,String propertyId) throws JSONException {
         long n=0;for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(r.optBoolean("void")||!inRange(r,start,end))continue;
             if(propertyId==null)n=Math.addExact(n,Ledger.money(r,"amount"));else{JSONArray splits=r.getJSONArray("splits");for(int j=0;j<splits.length();j++)if(propertyId.equals(splits.getJSONObject(j).getString("propertyId")))n=Math.addExact(n,Ledger.money(splits.getJSONObject(j),"amount"));}}
@@ -55,6 +58,10 @@ public final class Bookkeeping {
             account(r.getString("name"),type,r.getString("start"),Ledger.money(r,"opening"),r.optString("propertyId"));
             if(type.equals("現金"))cash++;if(!r.optString("propertyId").isEmpty()&&!propertyIds.contains(r.getString("propertyId")))throw new IllegalArgumentException("帳戶的不動產不存在");}
         if(cash>1)throw new IllegalArgumentException("共用現金帳戶只能有一個");
+        if(backup.has("deposits")) {
+            Set<String> leaseIds=new HashSet<>();JSONArray leases=backup.getJSONArray("leases");for(int i=0;i<leases.length();i++)leaseIds.add(leases.getJSONObject(i).getString("id"));
+            Deposits.validate(backup.getJSONArray("deposits"),leaseIds,accountIds);
+        }
         for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(!r.optString("accountId").isEmpty()&&!accountIds.contains(r.getString("accountId")))throw new IllegalArgumentException("收款帳戶不存在");}
         for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(r.getString("id").isEmpty()||!ids.add(r.getString("id"))||!accountIds.contains(r.getString("accountId")))throw new IllegalArgumentException("支出帳戶或ID無效");
             r.getBoolean("void");expense(r.getString("date"),r.getString("accountId"),r.getString("category"),r.getString("description"),Ledger.money(r,"amount"),r.getJSONArray("splits"));

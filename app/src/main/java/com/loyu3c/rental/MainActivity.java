@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
     }
     private String pendingBackup;
     private String propertyId="", unitId="";
-    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations"};
+    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits"};
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Taipei")); }
     private static final int EXPORT = 41, IMPORT = 42;
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
             } catch(Exception e) { card("收租資料異常", "請先匯出備份並停止收款登錄。"); }
             try {
                 YearMonth ym=YearMonth.from(today());card("本月已登錄支出", "$"+Bookkeeping.expenseTotal(data("expenses"),ym.atDay(1).toString(),ym.atEndOfMonth().toString(),null)+"（含房貸總扣款；不含提款轉帳）");
-                card("銀行與共用零用金",data("accounts").length()+" 個已設定帳戶；未對應的舊收款 "+unlinkedReceipts()+" 筆。\n請到記帳查看各帳戶餘額、流水與對帳。押金收付尚未啟用。");
+                card("銀行與共用零用金",data("accounts").length()+" 個已設定帳戶；未對應的舊收款 "+unlinkedReceipts()+" 筆。\n請到記帳查看各帳戶餘額、流水與對帳。押金另行追蹤，不是可用租金收入。");
             }catch(Exception e){card("資金資料異常","請先匯出備份，暫停記帳。");}
             card("不動產建檔", "已建立 " + data("properties").length() + " 筆不動產、" + data("units").length() + " 個出租單位。\n請從不動產入口新增。");
         } else if (selected == 1) {
@@ -104,8 +104,9 @@ public class MainActivity extends Activity {
             card("爸爸的總報表", "三棟總覽、各棟收支、停車收入、押金與帳戶流水。\n不顯示電話。");
             card("租客的獨立報表", "每租約獨立檔案，只看自己的租期、押金與繳款紀錄。");
             action("本地支出與各棟分攤報表",this::expenseReport);
+            action("押金總覽",this::depositOverview);
             action("帳戶流水與存摺對帳",this::accountsDialog);
-            card("歷史補登", "起算日前歷史交易列入報表，不重複改變期初餘額。\n帳務未齊，餘額需核對；押金收付尚未啟用。");
+            card("歷史補登", "起算日前歷史交易列入報表，不重複改變期初餘額。\n帳務未齊，餘額需核對；押金另行追蹤，不是可用租金收入。");
             action("匯出完整備份", this::exportBackup);
             action("從檔案還原資料", this::importBackup);
             card("Google 同步：未設定", "目前尚未連接 Google，也沒有上傳任何資料。");
@@ -149,6 +150,8 @@ public class MainActivity extends Activity {
         row.addView(name,new LinearLayout.LayoutParams(dp(88),-2));layout.addView(row,new LinearLayout.LayoutParams(-1,-2));return row;
     }
     private String fieldLabel(String hint) {
+        if(hint.contains("收款帳戶"))return "收款帳戶";
+        if(hint.startsWith("實際收到押金"))return "押金金額";
         if(hint.startsWith("搜尋"))return "搜尋";
         if(hint.contains("Gmail"))return "Gmail";
         if(hint.startsWith("月租金")||hint.equals("本月租金"))return "月租金";
@@ -286,7 +289,7 @@ public class MainActivity extends Activity {
         for(int i=0;i<leases.length();i++)if(unit.optString("id").equals(leases.optJSONObject(i).optString("unitId")))rows.add(leases.optJSONObject(i));
         rows.sort((x,y)->y.optString("start").compareTo(x.optString("start")));
         for(JSONObject l:rows) {
-            card(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+"\n月租 $"+l.optLong("rent")+" · "+l.optString("cycle")+"\n約定押金 $"+l.optLong("deposit")+"（未登錄押金收付）\n"+l.optString("email")+"\n"+l.optString("utilities")+(l.optString("utilities").equals("管理者代收水電")?(l.isNull("water")?" · 水費待設定":" · 月水費 $"+l.optLong("water")):""));
+            card(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+"\n月租 $"+l.optLong("rent")+" · "+l.optString("cycle")+"\n約定押金 $"+l.optLong("deposit")+"（約定金額；實收看押金明細）\n"+l.optString("email")+"\n"+l.optString("utilities")+(l.optString("utilities").equals("管理者代收水電")?(l.isNull("water")?" · 水費待設定":" · 月水費 $"+l.optLong("water")):""));
             action("修改 "+l.optString("tenant")+" 的租約",()->leaseForm(unit,l));
             action("查看帳單與收款",()->leaseLedger(l));
         }
@@ -400,7 +403,7 @@ public class MainActivity extends Activity {
             cycle.setSelection(original.optString("cycle").equals("年繳")?1:0);utilities.setSelection(original.optString("utilities").equals("管理者代收水電")?1:0);
             if(!original.isNull("water"))water.setText(original.optString("water"));rate.setText(original.optString("electricRate","5"));
             if(hasBilling(original.optString("id"))) {
-                layout.addView(text("已有帳單：租期、租金、押金與繳款週期鎖定。姓名、Gmail和水電設定可修改；水電設定只套用新帳單。換租客請新增租約。",14,Color.rgb(137,83,15)));
+                layout.addView(text("已有帳務：租期、租金、押金與繳款週期鎖定。姓名、Gmail和水電設定可修改；水電設定只套用新帳單。換租客請新增租約。",14,Color.rgb(137,83,15)));
                 for(EditText f:new EditText[]{start,end,rent,day,deposit})f.setEnabled(false);cycle.setEnabled(false);
             }
         }
@@ -448,7 +451,7 @@ public class MainActivity extends Activity {
 
 
     private boolean hasBilling(String leaseId) {
-        for(String key:new String[]{"invoices","receipts"}) {JSONArray rows=data(key);for(int i=0;i<rows.length();i++)if(rows.optJSONObject(i).optString("leaseId").equals(leaseId))return true;}return false;
+        for(String key:new String[]{"invoices","receipts","deposits"}) {JSONArray rows=data(key);for(int i=0;i<rows.length();i++)if(rows.optJSONObject(i).optString("leaseId").equals(leaseId))return true;}return false;
     }
     private void error(Exception e) { new AlertDialog.Builder(this).setMessage(display(String.valueOf(e.getMessage()==null?"資料格式不正確，請檢查輸入。":e.getMessage()))).setPositiveButton("知道了",null).show(); }
     private void copyBill(JSONObject lease,String month) {
@@ -509,6 +512,7 @@ public class MainActivity extends Activity {
             action("＋ 建立當月帳單（租金＋水電）",()->billingForm(lease));
             action("＋ 收到租金",()->receiptForm(lease));
             if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
+            depositCard(lease);
             Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
             for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))months.computeIfAbsent(r.getString("month"),key->new ArrayList<>()).add(r);}
             for(Map.Entry<String,List<JSONObject>> entry:months.entrySet()) {
@@ -649,8 +653,50 @@ public class MainActivity extends Activity {
         }catch(Exception e){error(e);}}).show();
     }
 
+    private void depositCard(JSONObject lease) throws JSONException {
+        JSONObject sums=Deposits.summary(lease.getString("id"),data("deposits"));
+        card("押金", "約定 $"+lease.getLong("deposit")+"\n累計已收 $"+sums.getLong("received")+" · 已退 $"+sums.getLong("refunded")+"\n持有／待退餘額 $"+sums.getLong("held")+"\n押金不是租金收入；尚未支援扣抵欠款或修繕。");
+        action("＋ 收到押金",()->depositForm(lease,false));action("退還押金",()->depositForm(lease,true));
+        JSONArray rows=data("deposits");List<JSONObject> sorted=new ArrayList<>();for(int i=0;i<rows.length();i++)if(lease.getString("id").equals(rows.getJSONObject(i).getString("leaseId")))sorted.add(rows.getJSONObject(i));
+        sorted.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
+        for(JSONObject r:sorted){card(r.getString("date")+" · "+r.getString("kind")+" $"+r.getLong("amount"),accountName(r.getString("accountId"))+"\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷："+r.optString("voidReason"):""));
+            if(!r.getBoolean("void"))action("撤銷此筆錯誤押金紀錄",()->voidMovement("deposits",r));}
+    }
+    private void depositForm(JSONObject lease,boolean refund) {
+        List<JSONObject> accounts=accountRows();if(accounts.isEmpty()){error(new IllegalArgumentException("請先到記帳建立銀行或共用現金帳戶"));return;}
+        LinearLayout layout=form();String kind=refund?"退還押金":"收到押金";
+        EditText date=dateField(layout,refund?"退款日期":"收取日期",false);Spinner account=accountChoice(layout,accounts,refund?"退款帳戶":"收款帳戶");
+        JSONObject unit=find("units",lease.optString("unitId"));if(unit!=null)for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("propertyId").equals(unit.optString("propertyId"))){account.setSelection(i);break;}
+        EditText amount=labeledNumber(layout,refund?"實際退款金額":"實際收到押金金額"),note=labeledField(layout,"備註／交易辨識");
+        layout.addView(text("約定押金 $"+lease.optLong("deposit")+"。請依實際金流登錄；補登起算日前收付只補押金餘額，不重複加減期初資金。退款不能超過該租約當時持有押金。",14,Color.DKGRAY));
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle(kind).setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
+            JSONObject row=Deposits.movement(lease.getString("id"),accounts.get(account.getSelectedItemPosition()).getString("id"),date.getText().toString(),kind,amount(amount,false),note.getText().toString())
+                .put("tenantSnapshot",lease.getString("tenant")).put("unitCodeSnapshot",lease.getString("unitCodeSnapshot"));
+            JSONArray before=data("deposits"),proposed=new JSONArray(before.toString()).put(row);Bookkeeping.validate(fullBackup().put("deposits",proposed));
+            JSONObject totals=Deposits.summary(lease.getString("id"),proposed);JSONObject selectedAccount=accounts.get(account.getSelectedItemPosition());
+            String preview=lease.getString("unitCodeSnapshot")+" · "+lease.getString("tenant")+"\n"+row.getString("date")+" · "+kind+" $"+row.getLong("amount")+"\n帳戶："+selectedAccount.getString("name")+"\n確認後持有／待退 $"+totals.getLong("held")
+                +(LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(selectedAccount.getString("start")))?"\n起算日前歷史，不重複加減期初資金。":"\n帳戶資金只加減一次，不列租金收入或支出。")
+                +(totals.getLong("received")>lease.getLong("deposit")?"\n累計實收高於約定押金，請確認實際金額正確。":"");
+            new AlertDialog.Builder(this).setMessage(display(preview)).setNegativeButton("修改",null).setPositiveButton("確認"+kind,(d,b)->{try{
+                JSONArray latest=data("deposits");for(int i=0;i<latest.length();i++){JSONObject old=latest.getJSONObject(i);if(old.getString("id").equals(row.getString("id")))return;
+                    if(!old.getBoolean("void")&&old.getString("leaseId").equals(row.getString("leaseId"))&&old.getString("accountId").equals(row.getString("accountId"))&&old.getString("date").equals(row.getString("date"))&&old.getString("kind").equals(row.getString("kind"))&&old.getLong("amount")==row.getLong("amount")&&old.getString("note").equals(row.getString("note")))throw new IllegalArgumentException("已有相同押金紀錄，請核對；若為另一筆請填不同交易辨識。");}
+                latest.put(row);if(saveChecked("deposits",latest)){dialog.dismiss();render();}
+            }catch(Exception e){error(e);}}).show();
+        }catch(Exception e){error(e);}}));dialog.show();
+    }
+    private void depositOverview() {
+        LinearLayout content=form();Runnable refresh=()->{
+            content.removeAllViews();LinearLayout previous=body;body=content;try{
+                JSONObject sums=Deposits.summary(null,data("deposits"));card("押金總覽","累計收到 $"+sums.getLong("received")+" · 已退 $"+sums.getLong("refunded")+"\n持有／待退 $"+sums.getLong("held")+"\n僅含已登錄紀錄；押金不列租金收入或費用。");
+                JSONArray leases=data("leases");for(int i=0;i<leases.length();i++){JSONObject lease=leases.getJSONObject(i),held=Deposits.summary(lease.getString("id"),data("deposits"));
+                    tapCard(lease.getString("unitCodeSnapshot")+" · "+lease.getString("tenant"),"約定 $"+lease.getLong("deposit")+" · 已收 $"+held.getLong("received")+"\n已退 $"+held.getLong("refunded")+" · 持有／待退 $"+held.getLong("held"),()->leaseLedger(lease));}
+            }catch(Exception e){error(e);}finally{body=previous;}
+        };refresh.run();showPanel("押金總覽",content,refresh);
+    }
+
     private JSONObject fullBackup() throws JSONException {
-        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",3);for(String key:KEYS)backup.put(key,data(key));return backup;
+        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",4);for(String key:KEYS)backup.put(key,data(key));return backup;
     }
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
@@ -664,7 +710,7 @@ public class MainActivity extends Activity {
         String[] names=new String[accounts.size()];for(int i=0;i<names.length;i++)names[i]=accounts.get(i).optString("name")+" · "+accounts.get(i).optString("type");return choice(layout,fieldLabel(label),names);
     }
     private void accountingScreen() {
-        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付、語音、照片與Google尚未啟用。");
+        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付可在租約明細登錄；語音、照片與Google尚未啟用。");
         action("＋ 新增銀行／共用現金帳戶",this::accountForm);
         if(data("accounts").length()==0) {card("尚未設定帳戶","請依存摺建立各銀行帳戶、共用現金的起算日與期初餘額。未設定不顯示為零。");return;}
         action("＋ 記錄支出／房貸扣款",this::expenseForm);
@@ -672,6 +718,7 @@ public class MainActivity extends Activity {
         action("查看帳戶流水與對帳",this::accountsDialog);
         action("對應舊收款的實際帳戶",this::linkReceipts);
         action("支出與各棟分攤報表",this::expenseReport);
+        action("押金總覽／收付",this::depositOverview);
         JSONArray expenses=data("expenses"),transfers=data("transfers");
         if(expenses.length()==0&&transfers.length()==0)card("尚無支出或轉帳","可以逐步補登半年資料。起算日前交易列報表但不再影響期初餘額。");
         List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++)rows.add(expenses.optJSONObject(i));for(int i=0;i<transfers.length();i++)rows.add(transfers.optJSONObject(i));
@@ -688,7 +735,7 @@ public class MainActivity extends Activity {
     private String receiptTenant(JSONObject receipt) {JSONObject lease=find("leases",receipt.optString("leaseId"));return lease==null?"":lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant");}
     private String accountName(String id) {JSONObject a=find("accounts",id);return a==null?"帳戶未設定":a.optString("name");}
     private String propertyName(String id) {JSONObject p=find("properties",id);return p==null?"不動產不存在":p.optString("name");}
-    private long balance(JSONObject account,String date) throws JSONException {return Bookkeeping.balance(account,date,data("receipts"),data("expenses"),data("transfers"));}
+    private long balance(JSONObject account,String date) throws JSONException {return Bookkeeping.balance(account,date,data("receipts"),data("expenses"),data("transfers"),data("deposits"));}
     private void accountForm() {
         LinearLayout layout=form();EditText name=labeledField(layout,"帳戶代稱，例如A帳戶、共用現金");Spinner type=choice(layout,new String[]{"銀行","現金"});
         EditText start=dateField(layout,"帳戶起算日",false);start.setText(today().toString());EditText opening=labeledNumber(layout,"起算日開始前的餘額，若無填0");
@@ -768,7 +815,7 @@ public class MainActivity extends Activity {
     private void drawAccounts(LinearLayout layout) {
         layout.removeAllViews();LinearLayout previous=body;body=layout;
         try{
-            card("帳戶與共用現金","餘額依已登錄的實際收款、支出及轉帳計算。押金收付尚未實作；未對應的舊收款 "+unlinkedReceipts()+" 筆不會算入任何帳戶。\n負餘額可能表示資料未補齊，請核對存摺。");
+            card("帳戶與共用現金","餘額依已登錄的實際收款、支出及轉帳計算。押金收付另計資金、不列租金；未對應的舊收款 "+unlinkedReceipts()+" 筆不會算入任何帳戶。\n負餘額可能表示資料未補齊，請核對存摺。");
             for(JSONObject account:accountRows()) {
                 String amount;try{amount="$"+balance(account,today().toString());}catch(IllegalArgumentException e){amount="起算日在未來，今日不計算";}
                 tapCard(account.getString("name"),"帳面餘額 "+amount+"\n起算 "+account.getString("start")+" · 期初 $"+account.getLong("opening"),()->accountStatement(account));
@@ -791,6 +838,8 @@ public class MainActivity extends Activity {
                 for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(id.equals(r.optString("accountId")))lines.add(new JSONObject().put("date",r.getString("date")).put("label","收款 "+receiptTenant(r)+" · "+r.getString("account")).put("delta",r.getLong("amount")).put("note",r.optString("note")));}
                 for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(id.equals(r.getString("accountId"))&&!r.optBoolean("void"))lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("category")).put("delta",-r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","expenses").put("sourceId",r.getString("id")));}
                 for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void"))continue;boolean from=id.equals(r.getString("fromId")),to=id.equals(r.getString("toId"));if(from||to)lines.add(new JSONObject().put("date",r.getString("date")).put("label","轉帳 "+accountName(r.getString("fromId"))+" → "+accountName(r.getString("toId"))).put("delta",from?-r.getLong("amount"):r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","transfers").put("sourceId",r.getString("id")));}
+                JSONArray deposits=data("deposits");for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);if(r.getBoolean("void")||!id.equals(r.getString("accountId")))continue;
+                    lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("kind")+" · "+receiptTenant(r)).put("delta",r.getString("kind").equals("收到押金")?r.getLong("amount"):-r.getLong("amount")).put("note",r.getString("note")).put("sourceKey","deposits").put("sourceId",r.getString("id")));}
                 lines.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());int n=0;
                 for(JSONObject r:lines) {if(LocalDate.parse(r.getString("date")).isAfter(LocalDate.parse(end)))continue;long delta=r.getLong("delta");card(r.getString("date")+" · "+r.getString("label"),(delta>=0?"+":"")+fmt(delta)+"\n"+r.getString("note")+(LocalDate.parse(r.getString("date")).isBefore(LocalDate.parse(start))?"\n歷史補登，未加減期初餘額":""));n++;if(r.has("sourceKey")){JSONObject source=find(r.optString("sourceKey"),r.optString("sourceId"));if(source!=null)action("撤銷此筆錯誤紀錄",()->voidMovement(r.optString("sourceKey"),source));}}
                 if(n==0)card("尚無此日期前的流水","請記帳或對應舊收款；未有紀錄不代表存摺沒有交易。");
@@ -866,7 +915,7 @@ public class MainActivity extends Activity {
     private void exportBackup() {
         try {
             JSONObject backup = new JSONObject();
-            backup.put("format", "rental-catalog"); backup.put("version", 3);
+            backup.put("format", "rental-catalog"); backup.put("version", 4);
             for (String key : KEYS) backup.put(key, data(key));
             pendingBackup = backup.toString(2);
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -876,7 +925,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) { Toast.makeText(this, "無法準備備份", Toast.LENGTH_LONG).show(); }
     }
     private void importBackup() {
-        new AlertDialog.Builder(this).setMessage(display(String.valueOf("還原會替換所有資料（含帳單、收款、支出與帳戶）。請先匯出完整備份；v1沒有帳務，v2沒有支出與帳戶。")))
+        new AlertDialog.Builder(this).setMessage(display(String.valueOf("還原會替換所有資料（含帳單、收款、支出與帳戶）。請先匯出完整備份；v1沒有帳務，v2沒有支出與帳戶，v3沒有押金收付。")))
             .setNegativeButton("取消", null).setPositiveButton("選擇檔案", (d,w) -> {
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
@@ -884,10 +933,11 @@ public class MainActivity extends Activity {
             }).show();
     }
     private void validateBackup(JSONObject backup) throws Exception {
-        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 3))
+        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 4))
             throw new IllegalArgumentException();
         if(backup.getInt("version")==1) {backup.put("invoices",new JSONArray());backup.put("receipts",new JSONArray());}
         if(backup.getInt("version")<3)for(String key:new String[]{"accounts","expenses","transfers","reconciliations"})backup.put(key,new JSONArray());
+        if(backup.getInt("version")<4)backup.put("deposits",new JSONArray());
         java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
         java.util.Set<String> codes = new java.util.HashSet<>();
         JSONArray p = backup.getJSONArray("properties"), u = backup.getJSONArray("units"), l = backup.getJSONArray("leases");
@@ -935,7 +985,7 @@ public class MainActivity extends Activity {
         Uri uri = intent.getData();
         try {
             if (request == EXPORT) {
-                if (pendingBackup == null) { JSONObject b=new JSONObject().put("format","rental-catalog").put("version",3);for(String key:KEYS)b.put(key,data(key));pendingBackup=b.toString(2); }
+                if (pendingBackup == null) { JSONObject b=new JSONObject().put("format","rental-catalog").put("version",4);for(String key:KEYS)b.put(key,data(key));pendingBackup=b.toString(2); }
                 try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
                     if (out == null) throw new IOException();
                     out.write(pendingBackup.getBytes(StandardCharsets.UTF_8));
@@ -950,7 +1000,7 @@ public class MainActivity extends Activity {
                     while ((n=in.read(chunk)) != -1) { if (buffer.size()+n > 2000000) throw new IOException(); buffer.write(chunk,0,n); }
                 }
                 JSONObject backup = new JSONObject(buffer.toString("UTF-8")); validateBackup(backup);
-                new AlertDialog.Builder(this).setMessage(display(String.valueOf("已驗證備份，確定替換所有資料？v1還原會清空帳務，v2還原會清空帳戶、支出、轉帳與對帳。")))
+                new AlertDialog.Builder(this).setMessage(display(String.valueOf("已驗證備份，確定替換所有資料？v1還原會清空帳務，v2還原會清空帳戶、支出、轉帳與對帳；v1–v3都會清空押金收付。")))
                     .setNegativeButton("取消", null).setPositiveButton("確認還原", (d,w) -> {
                         try {
                             android.content.SharedPreferences.Editor editor = getSharedPreferences("catalog",MODE_PRIVATE).edit();
