@@ -1,6 +1,10 @@
 package com.loyu3c.rental;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -17,6 +21,8 @@ import android.util.Patterns;
 
 public class MainActivity extends Activity {
     private LinearLayout body;
+    private String pendingBackup;
+    private static final int EXPORT = 41, IMPORT = 42;
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
     private int selected = 0;
 
@@ -72,6 +78,8 @@ public class MainActivity extends Activity {
             card("爸爸的總報表", "三棟總覽、各棟收支、停車收入、押金與帳戶流水。\n不顯示電話。");
             card("租客的獨立報表", "每租約獨立檔案，只看自己的租期、押金與繳款紀錄。");
             card("存摺對帳與歷史補登", "同日期比較實際與帳面餘額。\n起算日前資料不重複影響期初餘額。");
+            action("匯出建檔備份", this::exportBackup);
+            action("從檔案還原建檔", this::importBackup);
             card("Google 同步：未設定", "目前尚未連接 Google，也沒有上傳任何資料。");
         }
         LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
@@ -281,6 +289,88 @@ public class MainActivity extends Activity {
                 leases.put(lease); if (save("leases", leases)) { dialog.dismiss(); render(); }
             } catch (JSONException e) { tenant.setError("保存格式錯誤"); }
         })); dialog.show();
+    }
+
+
+    private void exportBackup() {
+        try {
+            JSONObject backup = new JSONObject();
+            backup.put("format", "rental-catalog"); backup.put("version", 1);
+            for (String key : new String[]{"properties", "units", "leases"}) backup.put(key, data(key));
+            pendingBackup = backup.toString(2);
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, "rental-catalog-" + LocalDate.now() + ".json");
+            startActivityForResult(intent, EXPORT);
+        } catch (Exception e) { Toast.makeText(this, "無法準備備份", Toast.LENGTH_LONG).show(); }
+    }
+    private void importBackup() {
+        new AlertDialog.Builder(this).setMessage("還原會替換目前的建檔資料。請先匯出備份；只接受本App的建檔備份檔。")
+            .setNegativeButton("取消", null).setPositiveButton("選擇檔案", (d,w) -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
+                startActivityForResult(intent, IMPORT);
+            }).show();
+    }
+    private void validateBackup(JSONObject backup) throws Exception {
+        if (!"rental-catalog".equals(backup.getString("format")) || backup.getInt("version") != 1)
+            throw new IllegalArgumentException();
+        java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
+        java.util.Set<String> codes = new java.util.HashSet<>();
+        JSONArray p = backup.getJSONArray("properties"), u = backup.getJSONArray("units"), l = backup.getJSONArray("leases");
+        for (int i=0; i<p.length(); i++) {
+            JSONObject item=p.getJSONObject(i);
+            if (item.getString("id").isEmpty() || !properties.add(item.getString("id")) || item.getString("name").trim().isEmpty()
+                || !(item.getString("type").equals("土地") || item.getString("type").equals("建築物"))) throw new IllegalArgumentException();
+        }
+        for (int i=0; i<u.length(); i++) {
+            JSONObject item=u.getJSONObject(i); String code=item.getString("code").trim();
+            if (item.getString("id").isEmpty() || !units.add(item.getString("id")) || !properties.contains(item.getString("propertyId"))
+                || code.isEmpty() || !codes.add(item.getString("propertyId")+"|"+code.toLowerCase(Locale.ROOT))) throw new IllegalArgumentException();
+            if (!java.util.Arrays.asList("房間","整棟","車格","土地出租範圍","其他空間").contains(item.getString("type"))) throw new IllegalArgumentException();
+        }
+        for (int i=0; i<l.length(); i++) {
+            JSONObject item=l.getJSONObject(i);
+            if (item.getString("id").isEmpty() || !leases.add(item.getString("id")) || !units.contains(item.getString("unitId"))
+                || item.getString("tenant").trim().isEmpty() || !Patterns.EMAIL_ADDRESS.matcher(item.getString("email")).matches()
+                || LocalDate.parse(item.getString("end")).isBefore(LocalDate.parse(item.getString("start")))
+                || item.getLong("rent") <= 0 || item.getLong("rent") > 1000000000L || item.getLong("deposit") < 0
+                || item.getInt("dueDay") < 1 || item.getInt("dueDay") > 31
+                || (!item.isNull("water") && item.getLong("water") < 0)) throw new IllegalArgumentException();
+        }
+    }
+    @Override protected void onActivityResult(int request, int result, Intent intent) {
+        super.onActivityResult(request, result, intent);
+        if (result != RESULT_OK || intent == null || intent.getData() == null) return;
+        Uri uri = intent.getData();
+        try {
+            if (request == EXPORT) {
+                if (pendingBackup == null) throw new IOException();
+                try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (out == null) throw new IOException();
+                    out.write(pendingBackup.getBytes(StandardCharsets.UTF_8));
+                }
+                pendingBackup = null;
+                Toast.makeText(this, "備份已匯出，包含姓名及Gmail，請妥善保存", Toast.LENGTH_LONG).show();
+            } else if (request == IMPORT) {
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                    if (in == null) throw new IOException();
+                    byte[] chunk = new byte[4096]; int n;
+                    while ((n=in.read(chunk)) != -1) { if (buffer.size()+n > 2000000) throw new IOException(); buffer.write(chunk,0,n); }
+                }
+                JSONObject backup = new JSONObject(buffer.toString("UTF-8")); validateBackup(backup);
+                new AlertDialog.Builder(this).setMessage("已驗證備份，確定替換目前的不動產、單位與租約？")
+                    .setNegativeButton("取消", null).setPositiveButton("確認還原", (d,w) -> {
+                        try {
+                            android.content.SharedPreferences.Editor editor = getSharedPreferences("catalog",MODE_PRIVATE).edit();
+                            for (String key : new String[]{"properties","units","leases"}) editor.putString(key,backup.getJSONArray(key).toString());
+                            if (!editor.commit()) throw new IOException();
+                            render(); Toast.makeText(this,"還原完成",Toast.LENGTH_LONG).show();
+                        } catch (Exception e) { Toast.makeText(this,"還原未完成",Toast.LENGTH_LONG).show(); }
+                    }).show();
+            }
+        } catch (Exception e) { Toast.makeText(this,"檔案讀寫失敗或備份無效，請重試",Toast.LENGTH_LONG).show(); }
     }
 
 }
