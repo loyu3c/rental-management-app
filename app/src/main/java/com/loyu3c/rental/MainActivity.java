@@ -143,12 +143,35 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(5),0,dp(5));
         b.setOnClickListener(v -> run.run()); body.addView(b,params);
     }
+    private LinearLayout inputRow(LinearLayout layout,String label) {
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name=text(label,14,Color.rgb(90,61,37));name.setPadding(0,dp(8),dp(8),dp(8));
+        row.addView(name,new LinearLayout.LayoutParams(dp(88),-2));layout.addView(row,new LinearLayout.LayoutParams(-1,-2));return row;
+    }
+    private String fieldLabel(String hint) {
+        if(hint.startsWith("搜尋"))return "搜尋";
+        if(hint.contains("Gmail"))return "Gmail";
+        if(hint.startsWith("月租金")||hint.equals("本月租金"))return "月租金";
+        if(hint.contains("應繳日"))return "應繳日";
+        if(hint.startsWith("約定押金"))return "約定押金";
+        if(hint.contains("月水費"))return "月水費";
+        if(hint.startsWith("每度電費"))return "每度電價";
+        if(hint.startsWith("上期／起始電表"))return "上期電表";
+        if(hint.startsWith("本期電表"))return "本期電表";
+        if(hint.startsWith("查看／對帳日期"))return "對帳日期";
+        if(hint.startsWith("實際收到金額"))return "收到金額";
+        if(hint.startsWith("備註／"))return "備註";
+        if(hint.startsWith("起算日開始前"))return "期初餘額";
+        if(hint.startsWith("項目／"))return "支出項目";
+        if(hint.startsWith("修正起算日開始前"))return "修正餘額";
+        if(hint.startsWith("存摺當日結束"))return "實際餘額";
+        String shortName=hint.split("[，,（(：:]")[0];return shortName.length()>7?shortName.substring(0,7):shortName;
+    }
     private EditText field(LinearLayout layout, String hint) {
-        EditText field = new EditText(this); field.setHint(hint); field.setSingleLine(true);
-        field.setTextSize(16); layout.addView(field); return field;
+        LinearLayout row=inputRow(layout,fieldLabel(hint));EditText field=new EditText(this);
+        field.setHint(hint);field.setSingleLine(true);field.setTextSize(16);row.addView(field,new LinearLayout.LayoutParams(0,-2,1));return field;
     }
     private EditText dateField(LinearLayout layout,String label,boolean monthOnly) {
-        layout.addView(text(label+"（點選）",14,Color.DKGRAY));
         EditText input=field(layout,label);input.setText(monthOnly?YearMonth.from(today()).toString():today().toString());
         input.setInputType(InputType.TYPE_NULL);input.setKeyListener(null);input.setCursorVisible(false);
         input.setShowSoftInputOnFocus(false);input.setLongClickable(false);input.setFocusable(true);input.setFocusableInTouchMode(false);
@@ -173,10 +196,13 @@ public class MainActivity extends Activity {
         });return input;
     }
 
-    private Spinner choice(LinearLayout layout, String[] names) {
-        Spinner spinner = new Spinner(this);
-        spinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, names));
-        layout.addView(spinner); return spinner;
+    private Spinner choice(LinearLayout layout,String[] names) {
+        String first=names.length==0?"":names[0];String label=first.equals("月繳")?"繳款週期":first.equals("租客自行繳水電")?"水電方式":first.equals("銀行")?"帳戶類型":first.equals("建築物")?"不動產類型":first.equals("房間")?"單位類型":first.startsWith("代號由")?"排序":first.equals("修繕")?"支出類別":first.startsWith("全部")?"狀態篩選":"選項";
+        return choice(layout,label,names);
+    }
+    private Spinner choice(LinearLayout layout,String label,String[] names) {
+        LinearLayout row=inputRow(layout,label);Spinner spinner=new Spinner(this);
+        spinner.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names));row.addView(spinner,new LinearLayout.LayoutParams(0,dp(52),1));return spinner;
     }
     private LinearLayout form() {
         LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL);
@@ -629,13 +655,13 @@ public class MainActivity extends Activity {
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
     }
-    private EditText labeledNumber(LinearLayout layout,String label) {layout.addView(text(label,14,Color.DKGRAY));return number(layout,label);}
-    private EditText labeledField(LinearLayout layout,String label) {layout.addView(text(label,14,Color.DKGRAY));return field(layout,label);}
+    private EditText labeledNumber(LinearLayout layout,String label) {return number(layout,label);}
+    private EditText labeledField(LinearLayout layout,String label) {return field(layout,label);}
     private List<JSONObject> accountRows() {
         List<JSONObject> result=new ArrayList<>();JSONArray accounts=data("accounts");for(int i=0;i<accounts.length();i++)result.add(accounts.optJSONObject(i));return result;
     }
     private Spinner accountChoice(LinearLayout layout,List<JSONObject> accounts,String label) {
-        layout.addView(text(label,14,Color.DKGRAY));String[] names=new String[accounts.size()];for(int i=0;i<names.length;i++)names[i]=accounts.get(i).optString("name")+" · "+accounts.get(i).optString("type");return choice(layout,names);
+        String[] names=new String[accounts.size()];for(int i=0;i<names.length;i++)names[i]=accounts.get(i).optString("name")+" · "+accounts.get(i).optString("type");return choice(layout,fieldLabel(label),names);
     }
     private void accountingScreen() {
         card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付、語音、照片與Google尚未啟用。");
@@ -667,7 +693,7 @@ public class MainActivity extends Activity {
         LinearLayout layout=form();EditText name=labeledField(layout,"帳戶代稱，例如A帳戶、共用現金");Spinner type=choice(layout,new String[]{"銀行","現金"});
         EditText start=dateField(layout,"帳戶起算日",false);start.setText(today().toString());EditText opening=labeledNumber(layout,"起算日開始前的餘額，若無填0");
         JSONArray properties=data("properties");String[] options=new String[properties.length()+1];options[0]="不綁定／共用現金";for(int i=0;i<properties.length();i++)options[i+1]=properties.optJSONObject(i).optString("name");
-        layout.addView(text("主要對應不動產（供收款預選）",14,Color.DKGRAY));Spinner property=choice(layout,options);
+        Spinner property=choice(layout,"對應不動產",options);
         layout.addView(text("請以存摺餘額為準，起算日當天及之後交易會加減。之前的歷史交易只供報表，不再次加減。\n期初設定若填錯，可在帳戶流水修正；請先匯出備份，修正會重算餘額。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("設定資金帳戶").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
