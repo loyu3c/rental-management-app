@@ -336,7 +336,7 @@ public class MainActivity extends Activity {
         })); dialog.show();
     }
     private EditText number(LinearLayout layout, String hint) {
-        EditText input = field(layout, hint); input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText input = field(layout, hint); input.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789,"));input.setRawInputType(InputType.TYPE_CLASS_NUMBER);
         boolean[] formatting={false};
         input.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence s,int a,int c,int d){} public void onTextChanged(CharSequence s,int a,int b,int c){}
