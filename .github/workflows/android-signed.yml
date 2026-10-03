@@ -36,7 +36,7 @@ jobs:
           export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/rental-signing.jks"
           trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
           printf '%s' "$KEYSTORE_DATA" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
-          gradle :app:assembleRelease :app:lintRelease --no-daemon
+          gradle :app:testReleaseUnitTest :app:assembleRelease :app:lintRelease --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: rental-management-fixed-signature
