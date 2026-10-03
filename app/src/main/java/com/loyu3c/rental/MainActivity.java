@@ -136,6 +136,32 @@ public class MainActivity extends Activity {
         EditText field = new EditText(this); field.setHint(hint); field.setSingleLine(true);
         field.setTextSize(16); layout.addView(field); return field;
     }
+    private EditText dateField(LinearLayout layout,String label,boolean monthOnly) {
+        layout.addView(text(label+"（點選）",14,Color.DKGRAY));
+        EditText input=field(layout,label);input.setText(monthOnly?YearMonth.from(today()).toString():today().toString());
+        input.setInputType(InputType.TYPE_NULL);input.setKeyListener(null);input.setCursorVisible(false);
+        input.setShowSoftInputOnFocus(false);input.setLongClickable(false);input.setFocusable(true);input.setFocusableInTouchMode(false);
+        input.setOnClickListener(v->{
+            if(!input.isEnabled())return;
+            if(monthOnly) {
+                YearMonth chosen;try{chosen=YearMonth.parse(input.getText().toString());}catch(Exception e){chosen=YearMonth.from(today());}
+                LinearLayout pickers=form();pickers.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout years=new LinearLayout(this),months=new LinearLayout(this);years.setOrientation(LinearLayout.VERTICAL);months.setOrientation(LinearLayout.VERTICAL);
+                years.addView(text("年",16,Color.DKGRAY));months.addView(text("月",16,Color.DKGRAY));
+                NumberPicker year=new NumberPicker(this),month=new NumberPicker(this);
+                year.setMinValue(1900);year.setMaxValue(2200);year.setValue(Math.max(1900,Math.min(2200,chosen.getYear())));year.setWrapSelectorWheel(false);
+                month.setMinValue(1);month.setMaxValue(12);month.setValue(chosen.getMonthValue());
+                year.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);month.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                years.addView(year);months.addView(month);pickers.addView(years,new LinearLayout.LayoutParams(0,-2,1));pickers.addView(months,new LinearLayout.LayoutParams(0,-2,1));
+                new AlertDialog.Builder(this).setTitle("選擇"+label).setView(pickers).setNegativeButton("取消",null).setPositiveButton("選定",(d,w)->input.setText(YearMonth.of(year.getValue(),month.getValue()).toString())).show();
+            } else {
+                LocalDate chosen;try{chosen=LocalDate.parse(input.getText().toString());}catch(Exception e){chosen=today();}
+                android.app.DatePickerDialog dialog=new android.app.DatePickerDialog(this,(picker,year,month,day)->input.setText(LocalDate.of(year,month+1,day).toString()),chosen.getYear(),chosen.getMonthValue()-1,chosen.getDayOfMonth());
+                dialog.setTitle("選擇"+label);dialog.show();
+            }
+        });return input;
+    }
+
     private Spinner choice(LinearLayout layout, String[] names) {
         Spinner spinner = new Spinner(this);
         spinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, names));
@@ -312,7 +338,7 @@ public class MainActivity extends Activity {
     private void leaseForm(JSONObject unit, JSONObject original) {
         LinearLayout layout = form();
         EditText tenant = field(layout, "租客姓名"), email = field(layout, "查看報表用 Gmail");
-        EditText start = field(layout, "起租日 YYYY-MM-DD"), end = field(layout, "到期日 YYYY-MM-DD");
+        EditText start = dateField(layout, "起租日",false), end = dateField(layout, "到期日",false);start.setText("");end.setText("");
         EditText rent = number(layout, "月租金（年繳也填每月金額）"), day = number(layout, "每月應繳日 1–31");
         Spinner cycle = choice(layout, new String[]{"月繳", "年繳"});
         EditText deposit = number(layout, "約定押金，無押金填0");
@@ -341,7 +367,7 @@ public class MainActivity extends Activity {
             LocalDate from, to;
             try { from = LocalDate.parse(start.getText().toString().trim()); to = LocalDate.parse(end.getText().toString().trim());
                 if (to.isBefore(from)) throw new IllegalArgumentException();
-            } catch (Exception e) { end.setError("日期需為 YYYY-MM-DD，結束不得早於開始"); return; }
+            } catch (Exception e) { end.setError("請點選日期；到期日不得早於起租日"); return; }
             long monthly, due, held, waterAmount, electricRate;
             try { monthly = amount(rent, false); due = amount(day, false); held = amount(deposit, false); waterAmount = amount(water, true); electricRate=amount(rate,false);
                 if (monthly <= 0 || due < 1 || due > 31) throw new IllegalArgumentException();
@@ -377,7 +403,7 @@ public class MainActivity extends Activity {
     }
     private void error(Exception e) { new AlertDialog.Builder(this).setMessage(e.getMessage()==null?"資料格式不正確，請檢查輸入。":e.getMessage()).setPositiveButton("知道了",null).show(); }
     private void rentScreen() {
-        card("帳單與收款", "選擇租約查看或開立帳單，再依存摺登錄一筆合併匯款。\n金額為整數新臺幣；未開帳單不代表沒有欠款。");
+        card("帳單與收款", "選擇租約查看或開立帳單，再依存摺登錄收到的租金（可包含水電）。\n金額為整數新臺幣；未開帳單不代表沒有欠款。");
         JSONArray leases=data("leases");
         if(leases.length()==0) {card("尚無租約","請先到不動產建立出租單位與租約。");return;}
         EditText search=field(body,"搜尋姓名、不動產或代號");
@@ -405,7 +431,7 @@ public class MainActivity extends Activity {
             card(lease.optString("tenant")+" · "+lease.optString("unitCodeSnapshot"),"帳單未付 $"+debt+"（含未到期）\n實際收款累計 $"+received+"\n尚未分配收款 $"+credit+"\n押金不包含於上述租金收款。");
             action("＋ 建立當月帳單（租金＋水電）",()->billingForm(lease));
             action("建立年繳租金",()->annualBillingForm(lease));
-            action("＋ 登錄一筆合併匯款",()->receiptForm(lease));
+            action("＋ 收到租金",()->receiptForm(lease));
             if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
             Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
             for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))months.computeIfAbsent(r.getString("month"),key->new ArrayList<>()).add(r);}
@@ -430,7 +456,7 @@ public class MainActivity extends Activity {
     private void billingForm(JSONObject lease) {
         LinearLayout layout=form();
         layout.addView(text("租金、水費與電費在這裡一起建立；已存在的帳單沿用原金額，不會重複開立。首末月租金請填實際應收。",14,Color.DKGRAY));
-        EditText month=field(layout,"帳單月份 YYYY-MM");month.setText(YearMonth.from(today()).toString());
+        EditText month=dateField(layout,"帳單月份",true);month.setText(YearMonth.from(today()).toString());
         TextView rentLabel=text("租金",15,Color.DKGRAY);layout.addView(rentLabel);
         EditText rent=number(layout,"本月租金");rent.setText(lease.optString("rent"));
         LinearLayout utilities=form();layout.addView(utilities);
@@ -490,7 +516,7 @@ public class MainActivity extends Activity {
     }
     private void annualBillingForm(JSONObject lease) {
         LinearLayout layout=form();layout.addView(text("一次建立最多12個月租金帳單；水電仍按月從「建立當月帳單」處理。已建立月份會跳過。年繳須另外登錄實際匯款才會顯示已付。",14,Color.DKGRAY));
-        EditText month=field(layout,"開始月份 YYYY-MM");month.setText(YearMonth.from(today()).toString());
+        EditText month=dateField(layout,"年繳開始月份",true);month.setText(YearMonth.from(today()).toString());
         EditText rent=number(layout,"每月實際租金");rent.setText(lease.optString("rent"));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("建立年繳租金").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
@@ -519,13 +545,13 @@ public class MainActivity extends Activity {
     }
     private void receiptForm(JSONObject lease) {
         List<JSONObject> accounts=accountRows();if(accounts.isEmpty()){error(new IllegalArgumentException("請先到記帳建立實際收款帳戶"));return;}
-        LinearLayout layout=form();EditText date=field(layout,"實際匯款日期 YYYY-MM-DD");date.setText(today().toString());
+        LinearLayout layout=form();EditText date=dateField(layout,"收到租金日期",false);date.setText(today().toString());
         JSONObject unit=find("units",lease.optString("unitId")),property=unit==null?null:find("properties",unit.optString("propertyId"));
         Spinner account=accountChoice(layout,accounts,"核對存摺的實際收款帳戶");if(property!=null)for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("propertyId").equals(property.optString("id"))){account.setSelection(i);break;}
-        EditText money=number(layout,"存摺核對的合併匯款金額"),note=field(layout,"備註／交易辨識，建議填存摺摘要");
+        EditText money=number(layout,"實際收到金額（含一起繳的水電費）"),note=field(layout,"備註／交易辨識，建議填存摺摘要");
         layout.addView(text("依最早月份分配，當月租金先於水電。年繳請先開立對應租金帳單；有水電舊欠款時也會先抵付。請核對下個畫面的分配清單。押金另行管理。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("核對存摺收款").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽分配",null).create();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("收到租金").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽分配",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try {
             JSONArray invoices=data("invoices"),receipts=data("receipts");JSONObject r=Ledger.receipt(lease.getString("id"),date.getText().toString().trim(),accounts.get(account.getSelectedItemPosition()).getString("name"),amount(money,false),note.getText().toString(),invoices,receipts).put("accountId",accounts.get(account.getSelectedItemPosition()).getString("id"));
             for(int i=0;i<receipts.length();i++){JSONObject old=receipts.getJSONObject(i);if(old.getString("leaseId").equals(r.getString("leaseId"))&&old.getString("date").equals(r.getString("date"))&&Bookkeeping.sameReceiptAccount(old,r)&&old.getLong("amount")==r.getLong("amount"))throw new IllegalArgumentException("同租約、日期、帳戶與金額已有收款，請先核對避免重複。");}
@@ -614,7 +640,7 @@ public class MainActivity extends Activity {
     private long balance(JSONObject account,String date) throws JSONException {return Bookkeeping.balance(account,date,data("receipts"),data("expenses"),data("transfers"));}
     private void accountForm() {
         LinearLayout layout=form();EditText name=labeledField(layout,"帳戶代稱，例如A帳戶、共用現金");Spinner type=choice(layout,new String[]{"銀行","現金"});
-        EditText start=labeledField(layout,"起算日 YYYY-MM-DD");start.setText(today().toString());EditText opening=labeledNumber(layout,"起算日開始前的餘額，若無填0");
+        EditText start=dateField(layout,"帳戶起算日",false);start.setText(today().toString());EditText opening=labeledNumber(layout,"起算日開始前的餘額，若無填0");
         JSONArray properties=data("properties");String[] options=new String[properties.length()+1];options[0]="不綁定／共用現金";for(int i=0;i<properties.length();i++)options[i+1]=properties.optJSONObject(i).optString("name");
         layout.addView(text("主要對應不動產（供收款預選）",14,Color.DKGRAY));Spinner property=choice(layout,options);
         layout.addView(text("請以存摺餘額為準，起算日當天及之後交易會加減。之前的歷史交易只供報表，不再次加減。\n期初設定若填錯，可在帳戶流水修正；請先匯出備份，修正會重算餘額。",14,Color.DKGRAY));
@@ -632,7 +658,7 @@ public class MainActivity extends Activity {
     private void expenseForm() {
         List<JSONObject> accounts=accountRows();JSONArray properties=data("properties");
         if(accounts.isEmpty()||properties.length()==0){error(new IllegalArgumentException("請先建立不動產與付款帳戶"));return;}
-        LinearLayout layout=form();EditText date=labeledField(layout,"實際付款日期 YYYY-MM-DD");date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"付款來源");
+        LinearLayout layout=form();EditText date=dateField(layout,"實際付款日期",false);date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"付款來源");
         Spinner category=choice(layout,Bookkeeping.CATEGORIES);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
         layout.addView(text("各棟分攤金額：不分攤的留空。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++)fields.add(labeledNumber(layout,properties.optJSONObject(i).optString("name")));
@@ -655,7 +681,7 @@ public class MainActivity extends Activity {
     }
     private void transferForm() {
         List<JSONObject> accounts=accountRows();if(accounts.size()<2){error(new IllegalArgumentException("需先建立至少兩個帳戶，例如銀行與共用現金"));return;}
-        LinearLayout layout=form();EditText date=labeledField(layout,"轉帳／提款日期 YYYY-MM-DD");date.setText(today().toString());Spinner from=accountChoice(layout,accounts,"轉出帳戶"),to=accountChoice(layout,accounts,"轉入帳戶");to.setSelection(1);
+        LinearLayout layout=form();EditText date=dateField(layout,"轉帳／提款日期",false);date.setText(today().toString());Spinner from=accountChoice(layout,accounts,"轉出帳戶"),to=accountChoice(layout,accounts,"轉入帳戶");to.setSelection(1);
         EditText value=labeledNumber(layout,"轉帳金額"),note=labeledField(layout,"備註，例如A帳戶提領零用金");layout.addView(text("銀行提款時選銀行→共用現金；不增加收入或支出。提款手續費請另外記支出。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("資金轉移").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
@@ -690,7 +716,7 @@ public class MainActivity extends Activity {
         }catch(Exception e){error(e);}finally{body=previous;}showPanel("資金帳戶",layout);
     }
     private void accountStatement(JSONObject account) {
-        LinearLayout layout=form();EditText date=labeledField(layout,"查看／對帳日期 YYYY-MM-DD（當日結束餘額）");date.setText(today().toString());
+        LinearLayout layout=form();EditText date=dateField(layout,"查看／對帳日期（當日結束餘額）",false);date.setText(today().toString());
         Button edit=new Button(this);edit.setText("修正期初設定（填錯時使用）");edit.setOnClickListener(v->editOpening(account));layout.addView(edit);
         TextView summary=text("",16,Color.rgb(90,61,37));layout.addView(summary);
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
@@ -727,7 +753,7 @@ public class MainActivity extends Activity {
         }catch(Exception e){error(e);}}));dialog.show();
     }
     private void editOpening(JSONObject account) {
-        LinearLayout layout=form();EditText date=labeledField(layout,"修正起算日 YYYY-MM-DD");date.setText(account.optString("start"));EditText opening=labeledNumber(layout,"修正起算日開始前餘額");opening.setText(account.optString("opening"));EditText reason=labeledField(layout,"修正原因，請先匯出備份");
+        LinearLayout layout=form();EditText date=dateField(layout,"修正起算日",false);date.setText(account.optString("start"));EditText opening=labeledNumber(layout,"修正起算日開始前餘額");opening.setText(account.optString("opening"));EditText reason=labeledField(layout,"修正原因，請先匯出備份");
         layout.addView(text("僅用於期初設定填錯；不是補帳或對帳調整。修改會依新起算日重算所有帳面餘額，原對帳快照保留。",14,Color.DKGRAY));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("修正期初設定").setView(layout).setNegativeButton("取消",null).setPositiveButton("預覽變更",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
@@ -761,7 +787,7 @@ public class MainActivity extends Activity {
         include.setOnCheckedChangeListener((b,checked)->refresh.run());search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("對應／更正收款帳戶",layout);
     }
     private void expenseReport() {
-        LinearLayout layout=form();EditText month=labeledField(layout,"支出月份 YYYY-MM");month.setText(YearMonth.from(today()).toString());
+        LinearLayout layout=form();EditText month=dateField(layout,"支出月份",true);month.setText(YearMonth.from(today()).toString());
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
         Runnable refresh=()->{
             list.removeAllViews();LinearLayout previous=body;body=list;try{
@@ -772,7 +798,7 @@ public class MainActivity extends Activity {
                 List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&r.getString("date").startsWith(ym.toString()))rows.add(r);}rows.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
                 for(JSONObject r:rows){StringBuilder detail=new StringBuilder(accountName(r.getString("accountId"))+"\n"+r.getString("description"));JSONArray splits=r.getJSONArray("splits");for(int i=0;i<splits.length();i++)detail.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));
                     card(r.getString("date")+" · "+r.getString("category")+" $"+r.getLong("amount"),detail.toString());action("撤銷此筆錯誤支出",()->voidMovement("expenses",r));}
-            }catch(Exception e){card("請輸入有效月份","格式 YYYY-MM");}finally{body=previous;}
+            }catch(Exception e){card("請選擇有效月份","點選月份欄位選取年與月");}finally{body=previous;}
         };
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("支出報表",layout);
     }
