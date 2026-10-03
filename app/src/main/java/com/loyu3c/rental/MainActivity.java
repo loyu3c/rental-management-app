@@ -39,6 +39,7 @@ public class MainActivity extends Activity {
     private static final int EXPORT = 41, IMPORT = 42;
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
     private int selected = 0;
+    private String rentSearch="";private int rentFilter=0;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -443,8 +444,8 @@ public class MainActivity extends Activity {
     private void rentScreen() {
         card("帳單與收款", "先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款。");
         if(data("leases").length()==0){card("尚無租約","請先到不動產建立出租單位與租約。");return;}
-        EditText search=field(body,"搜尋姓名、不動產或代號");
-        Spinner filter=choice(body,new String[]{"全部租約","有未繳金額（含未到期）","已有帳單且全部繳清","尚未開帳單"});
+        EditText search=field(body,"搜尋姓名、不動產或代號");search.setText(rentSearch);
+        Spinner filter=choice(body,new String[]{"全部租約","有未繳金額（含未到期）","已有帳單且全部繳清","尚未開帳單"});filter.setSelection(rentFilter);
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
             list.removeAllViews();LinearLayout previous=body;body=list;
@@ -463,8 +464,8 @@ public class MainActivity extends Activity {
                 if(count==0)card("沒有符合的租約","可調整搜尋或繳款狀態；歷史紀錄仍保留。");
             }catch(Exception e){error(e);}finally{body=previous;}
         };
-        search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});
-        filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){refresh.run();}public void onNothingSelected(AdapterView<?> p){}});refresh.run();
+        search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){rentSearch=s.toString();refresh.run();}public void afterTextChanged(Editable e){}});
+        filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){rentFilter=n;refresh.run();}public void onNothingSelected(AdapterView<?> p){}});refresh.run();
     }
     private void leaseLedger(JSONObject lease) {
         LinearLayout content=form();
