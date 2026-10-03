@@ -14,7 +14,7 @@
 
 - [x] 收款入口與標題改名。
 - [x] 所有日期欄位日曆選擇；月份欄位年／月選擇。
-- [ ] GitHub編譯、既有20個財務測試與lint。
+- [x] GitHub編譯、既有20個財務測試與lint通過。
 - [ ] 手機確認點擊跳出日曆、不跳文字鍵盤、取消保持原值；日期選擇後可正常保存。
 
-自我review；此為介面改善，不新增模仿實作的單元測試。既有財務測試作回歸檢查，CI與實機結果待補。
+自我review；此為介面改善，不新增模仿實作的單元測試。既有財務測試作回歸檢查。程式commit `750aed4c24053f567f27c1b9935c8d17085b3a5b`；2026-10-03 [固定簽署流程](https://github.com/loyu3c/rental-management-app/actions/runs/37130199987)通過testReleaseUnitTest、assembleRelease與lintRelease並產出APK。已檢查差異只包含文案、日期／月份輸入與版本提升，不修改財務計算。手機日曆點擊、鍵盤抑制、取消行為與覆蓋保留資料仍待實機驗證。

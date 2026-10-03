@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.6.0-preview，versionCode=7，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.6.1-preview，versionCode=8，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -33,3 +33,7 @@ Google、拍照、語音、押金收付與退租結算尚未啟用。帳單已�
 - 起算日前歷史可補登報表，不再次改變期初餘額。期初填錯可在流水修正並記原因，修正會重算帳面，請先備份。
 
 [本批規格與驗收](changes/expenses-cashflow.md)。仍以測試資料驗證手機操作，尚未登錄不表示沒有交易，押金收付尚未實作會影響實際餘額對帳。
+
+## 日期與收到租金
+
+租約明細點「＋ 收到租金」後，點日期欄位開啟日曆，選日期再確認。月帳單／年繳／支出報表的月份以年、月選擇器選取；其他付款、提款、帳戶起算與對帳日期亦使用日曆。不更動舊交易資料或分配。
