@@ -117,12 +117,15 @@ public class MainActivity extends Activity {
         LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
         for (int i = 0; i < tabs.length; i++) {
             final int index = i;
-            Button button = new Button(this); button.setText(tabs[i]); button.setTextSize(13);
+            Button button = new Button(this); button.setText(tabs[i]); button.setTextSize(12);
+            int[] icons={R.drawable.nav_home,R.drawable.nav_money,R.drawable.nav_ledger,R.drawable.nav_property,R.drawable.nav_report};
+            android.graphics.drawable.Drawable icon=getDrawable(icons[i]).mutate();icon.setTint(i==selected?Color.rgb(104,70,39):Color.rgb(115,112,106));icon.setBounds(0,0,dp(22),dp(22));
+            button.setCompoundDrawables(null,icon,null,null);button.setCompoundDrawablePadding(dp(3));button.setContentDescription(tabs[i]);
             button.setAllCaps(false); button.setPadding(0, 0, 0, 0);
             button.setTextColor(i == selected ? Color.rgb(104, 70, 39) : Color.DKGRAY);
             GradientDrawable navBg=new GradientDrawable();navBg.setColor(i==selected?Color.rgb(232,213,187):Color.rgb(248,244,237));navBg.setCornerRadius(dp(12));button.setBackground(navBg);
             button.setOnClickListener(v -> { selected = index; render(); });
-            nav.addView(button, new LinearLayout.LayoutParams(0, dp(56), 1));
+            nav.addView(button, new LinearLayout.LayoutParams(0, dp(64), 1));
         }
         root.addView(nav); setContentView(root);
     }
@@ -147,6 +150,26 @@ public class MainActivity extends Activity {
         GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(238,226,211));bg.setCornerRadius(dp(12));b.setBackground(bg);b.setMinHeight(dp(48));
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(5),0,dp(5));
         b.setOnClickListener(v -> run.run()); body.addView(b,params);
+    }
+    private void shortcut(LinearLayout row,String label,int iconId,Runnable run) {
+        Button button=new Button(this);button.setText(label);button.setTextSize(13);button.setAllCaps(false);button.setTextColor(Color.rgb(90,61,37));
+        android.graphics.drawable.Drawable icon=getDrawable(iconId).mutate();icon.setTint(Color.rgb(104,70,39));icon.setBounds(0,0,dp(26),dp(26));button.setCompoundDrawables(null,icon,null,null);button.setCompoundDrawablePadding(dp(6));
+        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(238,226,211));bg.setCornerRadius(dp(12));button.setBackground(bg);button.setPadding(dp(2),dp(10),dp(2),dp(10));button.setOnClickListener(v->run.run());
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(92),1);params.setMargins(dp(3),dp(5),dp(3),dp(8));row.addView(button,params);
+    }
+    private void actionGroup(String title,String[] labels,Runnable[] runs) {
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(255,252,247));bg.setCornerRadius(dp(12));box.setBackground(bg);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(5),0,dp(5));body.addView(box,params);
+        Button toggle=new Button(this);toggle.setAllCaps(false);toggle.setText(title+"  ▾");toggle.setTextColor(Color.rgb(90,61,37));toggle.setBackgroundColor(Color.TRANSPARENT);toggle.setMinHeight(dp(52));box.addView(toggle);
+        LinearLayout items=new LinearLayout(this);items.setOrientation(LinearLayout.VERTICAL);items.setVisibility(android.view.View.GONE);box.addView(items);
+        for(int i=0;i<labels.length;i++){final Runnable run=runs[i];Button item=new Button(this);item.setAllCaps(false);item.setText(labels[i]);item.setTextSize(14);item.setTextColor(Color.rgb(90,61,37));item.setBackgroundColor(Color.TRANSPARENT);item.setMinHeight(dp(48));item.setOnClickListener(v->run.run());items.addView(item,new LinearLayout.LayoutParams(-1,-2));}
+        toggle.setOnClickListener(v->{boolean open=items.getVisibility()!=android.view.View.VISIBLE;items.setVisibility(open?android.view.View.VISIBLE:android.view.View.GONE);toggle.setText(title+(open?"  ▴":"  ▾"));toggle.setContentDescription(title+(open?"，已展開":"，已收合"));});toggle.setContentDescription(title+"，已收合");
+    }
+    private void cardAction(LinearLayout box,String label,Runnable run) {
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.END);box.addView(row,new LinearLayout.LayoutParams(-1,-2));
+        Button button=new Button(this);button.setText(label);button.setAllCaps(false);button.setTextSize(14);button.setTextColor(Color.rgb(125,81,48));button.setMinHeight(dp(48));button.setMinimumWidth(dp(80));
+        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.TRANSPARENT);bg.setStroke(dp(1),Color.rgb(183,146,112));bg.setCornerRadius(dp(10));button.setBackground(bg);button.setPadding(dp(16),0,dp(16),0);button.setOnClickListener(v->run.run());button.setContentDescription(label+"此筆紀錄");
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-2,dp(48));params.setMargins(0,dp(8),0,0);row.addView(button,params);
     }
     private LinearLayout inputRow(LinearLayout layout,String label) {
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
@@ -807,17 +830,17 @@ public class MainActivity extends Activity {
         String[] names=new String[accounts.size()];for(int i=0;i<names.length;i++)names[i]=accounts.get(i).optString("name")+" · "+accounts.get(i).optString("type");return choice(layout,fieldLabel(label),names);
     }
     private void accountingScreen() {
-        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付可在租約明細登錄；電表照片已可使用；語音可整理草稿；Google尚未啟用。");
-        action("＋ 新增銀行／共用現金帳戶",this::accountForm);
-        if(data("accounts").length()==0) {card("尚未設定帳戶","請依存摺建立各銀行帳戶、共用現金的起算日與期初餘額。未設定不顯示為零。");return;}
-        action("🎤 語音記帳／文字草稿",()->voiceEditor(""));
-        action("＋ 記錄支出／房貸扣款",this::expenseForm);
-        action("銀行提款／帳戶間轉帳",this::transferForm);
-        action("查看帳戶流水與對帳",this::accountsDialog);
-        action("對應舊收款的實際帳戶",this::linkReceipts);
-        action("支出與各棟分攤報表",this::expenseReport);
-        action("押金總覽／收付",this::depositOverview);
-        action("退租結算與待收／待退",this::settlementOverview);
+        if(data("accounts").length()==0) {
+            card("尚未設定帳戶","請依存摺建立各銀行帳戶、共用現金的起算日與期初餘額。未設定不顯示為零。");
+            action("＋ 新增銀行／共用現金帳戶",this::accountForm);return;
+        }
+        LinearLayout shortcuts=new LinearLayout(this);body.addView(shortcuts,new LinearLayout.LayoutParams(-1,-2));
+        shortcut(shortcuts,"記支出",R.drawable.nav_ledger,this::expenseForm);
+        shortcut(shortcuts,"語音記帳",R.drawable.action_voice,()->voiceEditor(""));
+        shortcut(shortcuts,"提款／轉帳",R.drawable.action_transfer,this::transferForm);
+        actionGroup("帳戶管理",new String[]{"新增銀行／共用現金帳戶","查看帳戶流水與對帳","對應舊收款的實際帳戶"},new Runnable[]{this::accountForm,this::accountsDialog,this::linkReceipts});
+        actionGroup("更多功能",new String[]{"押金總覽／收付","退租結算與待收／待退"},new Runnable[]{this::depositOverview,this::settlementOverview});
+        TextView recent=text("近期紀錄",20,Color.rgb(77,57,39));recent.setTypeface(null,Typeface.BOLD);body.addView(recent);
         JSONArray expenses=data("expenses"),transfers=data("transfers");
         if(expenses.length()==0&&transfers.length()==0)card("尚無支出或轉帳","可以逐步補登半年資料。起算日前交易列報表但不再影響期初餘額。");
         List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++)rows.add(expenses.optJSONObject(i));for(int i=0;i<transfers.length();i++)rows.add(transfers.optJSONObject(i));
@@ -827,7 +850,7 @@ public class MainActivity extends Activity {
             String detail=r.optString("description")+(r.optBoolean("void")?"\n已撤銷錯誤紀錄":"");
             if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));
             else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
-            card(title,detail);if(!r.optBoolean("void"))action("撤銷此筆錯誤"+(transfer?"轉帳":"支出"),()->voidMovement(transfer?"transfers":"expenses",r));
+            LinearLayout box=card(title,detail);if(!r.optBoolean("void"))cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
         }
         if(rows.size()>15)card("顯示最近15筆","其他紀錄可在帳戶流水、支出報表及完整備份查看。");
     }
@@ -1052,7 +1075,7 @@ public class MainActivity extends Activity {
                 for(String category:Bookkeeping.CATEGORIES){long sum=0;for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&r.getString("date").startsWith(ym.toString())&&category.equals(r.getString("category")))sum+=r.getLong("amount");}card(category,"$"+sum);}
                 List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&r.getString("date").startsWith(ym.toString()))rows.add(r);}rows.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
                 for(JSONObject r:rows){StringBuilder detail=new StringBuilder(accountName(r.getString("accountId"))+"\n"+r.getString("description"));JSONArray splits=r.getJSONArray("splits");for(int i=0;i<splits.length();i++)detail.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));
-                    card(r.getString("date")+" · "+r.getString("category")+" $"+r.getLong("amount"),detail.toString());action("撤銷此筆錯誤支出",()->voidMovement("expenses",r));}
+                    LinearLayout box=card(r.getString("date")+" · "+r.getString("category")+" $"+r.getLong("amount"),detail.toString());cardAction(box,"撤銷",()->voidMovement("expenses",r));}
             }catch(Exception e){card("請選擇有效月份","點選月份欄位選取年與月");}finally{body=previous;}
         };
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("支出報表",layout,refresh);
