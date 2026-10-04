@@ -981,7 +981,7 @@ public class MainActivity extends Activity {
             }
             summary.setText("符合條件的有效支出 $"+totals.expenses+" · 轉帳 $"+totals.transfers+"\n包含尚未載入的符合紀錄；已撤銷不計，轉帳不列支出。" );
             if(matches==0)card("沒有符合條件的紀錄",rows.isEmpty()?"可以逐步補登半年資料。":"請調整月份、紀錄類型或搜尋文字。");else {body.addView(text("顯示 "+shown+" / "+matches+" 筆",14,Color.DKGRAY));if(matches>shown)action("載入更多紀錄",()->{expenseLimit+=15;drawExpenseRecords(records);});}
-        }finally{body=previous;}
+        }catch(Exception e){error(e);}finally{body=previous;}
     }
     private String receiptTenant(JSONObject receipt) {JSONObject lease=find("leases",receipt.optString("leaseId"));return lease==null?"":lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant");}
     private String categoryName(String id){return ExpenseCategories.name(data("expenseCategories"),id);}
@@ -990,7 +990,7 @@ public class MainActivity extends Activity {
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.TOP);TextView title=text(row.getString("description"),18,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);title.setPadding(0,0,dp(10),0);
         header.addView(title,new LinearLayout.LayoutParams(0,-2,1));TextView money=text("$"+fmt(row.getLong("amount")),20,Color.rgb(90,61,37));money.setTypeface(null,Typeface.BOLD);money.setGravity(Gravity.END);header.addView(money,new LinearLayout.LayoutParams(-2,-2));box.addView(header);
         TextView labels=text("付款日期："+row.getString("date")+"\n分類："+categoryName(row.getString("category"))+"\n付款帳戶："+accountName(row.getString("accountId")),14,Color.rgb(112,105,92));labels.setPadding(0,dp(6),0,0);box.addView(labels);
-        JSONArray splits=row.getJSONArray("splits");Button toggle=styledButton("分攤明細 · "+splits.length()+" 個不動產  ▾",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setBackgroundColor(Color.TRANSPARENT);box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
+        JSONArray splits=row.getJSONArray("splits");Button toggle=styledButton("分攤明細 · "+splits.length()+" 個不動產  ▾",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout details=new LinearLayout(this);details.setOrientation(LinearLayout.VERTICAL);details.setVisibility(View.GONE);for(int i=0;i<splits.length();i++){JSONObject split=splits.getJSONObject(i);details.addView(text(propertyName(split.getString("propertyId"))+"  $"+fmt(split.getLong("amount")),14,Color.rgb(112,105,92)));}box.addView(details);
         toggle.setContentDescription("分攤明細，已收合");toggle.setOnClickListener(v->{boolean open=details.getVisibility()!=View.VISIBLE;details.setVisibility(open?View.VISIBLE:View.GONE);toggle.setText("分攤明細 · "+splits.length()+" 個不動產"+(open?"  ▴":"  ▾"));toggle.setContentDescription("分攤明細，"+(open?"已展開":"已收合"));});
         if(row.optBoolean("void")){markExpenseVoided(box);box.addView(text("已撤銷 · "+row.optString("voidReason"),12,Color.GRAY));}
