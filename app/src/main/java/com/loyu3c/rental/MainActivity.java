@@ -40,7 +40,7 @@ public class MainActivity extends Activity {
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
     private int selected = 0;
     private String rentSearch="";private int rentFilter=0;
-    private String expenseSearch="",expenseMonth="";private int expenseFilter=0,expenseLimit=15;
+    private String expenseSearch="",expenseMonth="";private int expenseFilter=0,expenseLimit=15;private boolean expenseFiltersOpen=false;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -840,12 +840,15 @@ public class MainActivity extends Activity {
         actionGroup("帳戶管理",new String[]{"新增銀行／共用現金帳戶","查看帳戶流水與對帳","對應舊收款的實際帳戶"},new Runnable[]{this::accountForm,this::accountsDialog,this::linkReceipts});
         actionGroup("更多功能",new String[]{"押金總覽／收付","退租結算與待收／待退"},new Runnable[]{this::depositOverview,this::settlementOverview});
         TextView recent=text("近期紀錄",20,Color.rgb(77,57,39));recent.setTypeface(null,Typeface.BOLD);body.addView(recent);
+        LinearLayout page=body,filters=new LinearLayout(this);filters.setOrientation(LinearLayout.VERTICAL);filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);
+        action("搜尋與篩選  ▾",()->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);});page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
         EditText search=field(body,"搜尋項目、帳戶或不動產");search.setText(expenseSearch);
         Spinner type=choice(body,"紀錄類型",new String[]{"全部紀錄","有效支出","有效轉帳","已撤銷"});type.setSelection(expenseFilter);
         Spinner scope=choice(body,"月份範圍",new String[]{"全部月份","指定月份"});scope.setSelection(expenseMonth.isEmpty()?0:1);
         EditText month=dateField(body,"紀錄月份",true);month.setText(expenseMonth.isEmpty()?YearMonth.from(today()).toString():expenseMonth);android.view.View monthRow=(android.view.View)month.getParent();monthRow.setVisibility(expenseMonth.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
+        body=page;TextView filterSummary=text("目前："+(expenseMonth.isEmpty()?"全部月份":expenseMonth)+" · "+new String[]{"全部紀錄","有效支出","有效轉帳","已撤銷"}[expenseFilter]+(expenseSearch.trim().isEmpty()?"":" · 搜尋："+expenseSearch),13,Color.DKGRAY);body.addView(filterSummary);
         LinearLayout records=new LinearLayout(this);records.setOrientation(LinearLayout.VERTICAL);body.addView(records,new LinearLayout.LayoutParams(-1,-2));
-        Runnable draw=()->drawExpenseRecords(records);
+        Runnable draw=()->{filterSummary.setText("目前："+(expenseMonth.isEmpty()?"全部月份":expenseMonth)+" · "+new String[]{"全部紀錄","有效支出","有效轉帳","已撤銷"}[expenseFilter]+(expenseSearch.trim().isEmpty()?"":" · 搜尋："+expenseSearch));drawExpenseRecords(records);};
         search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){expenseSearch=s.toString();expenseLimit=15;draw.run();}public void afterTextChanged(Editable e){}});
         type.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){expenseFilter=n;expenseLimit=15;draw.run();}});
         scope.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){expenseMonth=n==0?"":month.getText().toString();monthRow.setVisibility(n==0?android.view.View.GONE:android.view.View.VISIBLE);expenseLimit=15;draw.run();}});
