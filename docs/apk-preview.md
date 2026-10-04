@@ -1,6 +1,14 @@
 # APK 整合測試版
 
-版本 0.28.0-preview，versionCode=31，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.28.1-preview，versionCode=32，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.28.1 支出卡片排列
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37211653212/artifacts/11307215699)。Release單元測試、編譯、lint及Google契約測試通過；實機排版待確認。
+
+- 第一行日期＋項目，下方左側金額、分類、付款帳戶，右側修改／撤銷直接上下排列。
+- 分攤明細獨立在下方，預設收合；修改紀錄改為左側可點入口。
+- 只調整版面，v8備份與修改／撤銷計算規則維持0.28。更新前匯出完整備份，解壓安裝app-release.apk。
 
 ## 0.28 支出卡片與修改
 
