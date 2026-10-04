@@ -1,6 +1,16 @@
 # APK 整合測試版
 
-版本 0.17.0-preview，versionCode=20，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.18.0-preview，versionCode=21，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.18 租約帳務版
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37192265010/artifacts/11299009513)。Release 單元測試、APK 編譯、lint 及 Google 同步契約測試已通過。實機驗收尚待完成。
+
+- 開啟租約帳單：固定顯示單位、姓名及租期／退租日，分為總覽、帳單、押金、退租結算。
+- 帳單每月一張摘要，點展開查看租金、水電、電表、照片與操作。
+- 押金分頁登錄實際收取／退還；退租結算分頁查看費用、補繳及待退款，原帳單預設收合。
+- 保存收款、押金或結算後目前分頁立即更新。資料與帳務計算保持原有規則。
+- 請測試長姓名、大字體、月份展開及收款更新。先匯出完整備份再更新。
 
 ## 下載與安裝
 
