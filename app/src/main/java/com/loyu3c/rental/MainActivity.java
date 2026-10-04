@@ -209,7 +209,7 @@ public class MainActivity extends Activity {
     }
     private Spinner choice(LinearLayout layout,String label,String[] names) {
         LinearLayout row=inputRow(layout,label);Spinner spinner=new Spinner(this);
-        spinner.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names));row.addView(spinner,new LinearLayout.LayoutParams(0,dp(52),1));return spinner;
+        spinner.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names));spinner.setTag(label);row.addView(spinner,new LinearLayout.LayoutParams(0,dp(52),1));return spinner;
     }
     private LinearLayout form() {
         LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL);
@@ -856,7 +856,7 @@ public class MainActivity extends Activity {
     private void addDraftAccountPlaceholder(List<JSONObject> accounts,JSONObject draft) {
         if(draft==null)return;accounts.add(0,new JSONObject());try{accounts.get(0).put("id","").put("name","請選實際帳戶").put("type","待選");}catch(Exception e){throw new IllegalStateException(e);}
     }
-    private JSONObject selectedDraftAccount(List<JSONObject> accounts,Spinner spinner) throws JSONException {JSONObject row=accounts.get(spinner.getSelectedItemPosition());if(row.getString("id").isEmpty())throw new IllegalArgumentException("請選擇實際帳戶");return row;}
+    private JSONObject selectedDraftAccount(List<JSONObject> accounts,Spinner spinner) throws JSONException {JSONObject row=accounts.get(spinner.getSelectedItemPosition());if(row.getString("id").isEmpty())throw new IllegalArgumentException("請選擇"+String.valueOf(spinner.getTag()));return row;}
     private void selectDraftAccount(Spinner spinner,List<JSONObject> accounts,String id) {spinner.setSelection(0);if(!id.isEmpty())for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("id").equals(id))spinner.setSelection(i);}
     private void setDraftAmount(EditText input,JSONObject draft){input.setText(draft.isNull("amount")?"":draft.optString("amount"));}
     private void selectDraftChoice(Spinner spinner,String value) {for(int i=0;i<spinner.getCount();i++)if(value.equals(spinner.getItemAtPosition(i).toString()))spinner.setSelection(i);}
@@ -885,14 +885,19 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("選擇正確的語音文字").setItems(results.toArray(new String[0]),(d,n)->voiceEditor(results.get(n))).setNegativeButton("返回草稿",(d,n)->voiceEditor("")).show();
     }
 
-    private void expenseForm() {expenseForm(null);}
+    private void expenseForm() {
+        new AlertDialog.Builder(this).setTitle("記錄支出／房貸扣款")
+            .setItems(new String[]{"手動填寫支出","🎤 語音輸入支出（先核對草稿）"},(d,n)->{
+                if(n==0)expenseForm(null);else voiceEditor("");
+            }).setNegativeButton("取消",null).show();
+    }
     private void expenseForm(JSONObject draft) {
         List<JSONObject> accounts=accountRows();JSONArray properties=data("properties");
         if(accounts.isEmpty()||properties.length()==0){error(new IllegalArgumentException("請先建立不動產與付款帳戶"));return;}
         addDraftAccountPlaceholder(accounts,draft);
         LinearLayout layout=form();EditText date=dateField(layout,"實際付款日期",false);date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"付款來源");
         String[] categories=Bookkeeping.CATEGORIES;if(draft!=null){categories=new String[Bookkeeping.CATEGORIES.length+1];categories[0]="請選支出分類";System.arraycopy(Bookkeeping.CATEGORIES,0,categories,1,Bookkeeping.CATEGORIES.length);}
-        Spinner category=choice(layout,categories);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
+        Spinner category=choice(layout,"支出類別",categories);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
         layout.addView(text("各棟分攤金額：不分攤的留空。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++)fields.add(labeledNumber(layout,properties.optJSONObject(i).optString("name")));
         if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));selectDraftChoice(category,draft.optString("category"));try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
@@ -902,6 +907,7 @@ public class MainActivity extends Activity {
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("支出與分攤").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONArray splits=new JSONArray();for(int i=0;i<fields.size();i++){long n=amount(fields.get(i),true);if(n>0)splits.put(new JSONObject().put("propertyId",properties.getJSONObject(i).getString("id")).put("amount",n));}
+            if(category.getSelectedItem().toString().equals("請選支出分類"))throw new IllegalArgumentException("請選擇支出類別");
             JSONObject a=selectedDraftAccount(accounts,account);JSONObject row=Bookkeeping.expense(dateValue(date),a.getString("id"),category.getSelectedItem().toString(),requiredText(description),amount(total,false),splits);
             StringBuilder preview=new StringBuilder(row.getString("date")+" · "+row.getString("category")+"\n"+row.getString("description")+"\n付款："+a.getString("name")+" $"+row.getLong("amount"));
             for(int i=0;i<splits.length();i++)preview.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));

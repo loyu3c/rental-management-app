@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.11.0-preview，versionCode=13，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.11.1-preview，versionCode=14，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -99,3 +99,9 @@ Google未啟用；語音草稿已加入。本批相機／相簿／圖片檢視�
 本版使用手機語音服務（可能需網路）及本地常見句型規則，不含雲端AI解析。仍需實機測試語音、草稿帶入及保留資料升級。
 
 0.11下載：[固定簽署APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37166342169/artifacts/11288809364)。來源 325da5db9e7e200d195430022c48242a0af036c2，固定簽署及Debug Checks成功。
+
+## 0.11.1 支出輸入改善
+
+記帳 → 記錄支出／房貸扣款，可選手動填寫或語音輸入。語音仍先核對文字與草稿，再帶入表單確認；不自動入帳。
+
+日期、月份與金額缺漏顯示欄位名稱，支出項目及帳戶名稱必填提示也指出欄位。付款來源／轉出／轉入帳戶與支出類別缺漏各自提示。選填的各棟分攤金額仍可留空。手機需確認缺日期、缺金額、缺項目及語音流程，既有資料保留。
