@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.16.0-preview，versionCode=19，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.17.0-preview，versionCode=20，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -157,3 +157,15 @@ Excel以真正數字存金額，套用#,##0格式，負數仍數字，房號文�
 [下載0.16.0固定簽署APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37188958816/artifacts/11298341893)。先完整備份，解壓安裝app-release.apk，固定簽署/applicationId沿用，versionCode19。
 
 CI單元測試、release編譯、lint及Debug Checks成功；新增工作簿測試含ZIP/XML、數字與格式、負數、文字房號、凍結篩選、姓名字元保護。Android檔案匯出及Google試算表實際開啟外觀待實機驗證。
+
+## 0.17.0 Google房東月報手動同步
+
+Google服務程式與App設定／測試連線／立即同步／結果及最後成功時間已實作，但尚未在使用者帳號部署，沒有宣稱真實Google已同步。第一版手動同步，背景自動同步與租客分檔權限後續加入。
+
+[一次性啟用步驟](../google-sync/README.md)。在使用者Google試算表的Apps Script貼Code.gs與appsscript.json，執行setupRentalSync並授權，部署為網頁應用程式（本人執行／任何人存取）；只在App填金鑰與正式/exec網址。金鑰不要貼聊天或GitHub。試算表本身仍私人，完成後共用給爸爸Gmail「檢視者」。
+
+App入口：報表 → Google同步設定／狀態。測試連線不傳帳務；在爸爸的每月總報表選月份後立即同步，更新该月份3個租務分頁，格式含千位逗點。只傳房東報表，沒有電話Gmail照片備註銀行帳號。原始手機帳務不被Google改寫。
+
+[下載0.17.0固定簽署APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37189825277/artifacts/11299040080)。先完整備份，解壓安裝app-release.apk。versionCode20及固定簽署沿用。同步連線金鑰不在完整備份；換機須重新設定。
+
+CI Node模擬服務合約、Java同步網址／金鑰／轉址驗證、既有單元測試、release編譯及lint、Debug Checks成功。真實Google授權／API部署、手機Keystore與端到端同步仍待啟用後實機確認。
