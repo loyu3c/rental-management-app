@@ -1,6 +1,16 @@
 # APK 整合測試版
 
-版本 0.21.0-preview，versionCode=24，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.22.0-preview，versionCode=25，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.22 上期電表與語音欄位連動
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37199359866/artifacts/11302357599)。Android單元測試、Release編譯、lint及同步程式契約測試通過；不代表已部署Google服務。Google同步設定暫停。
+
+- 新增抄表：選月份後，同租約上一月份本期度數自動填入上期欄位，水電帳單優先、其次有效抄表；缺紀錄或跨租客不帶入。來源顯示，可手動修正。
+- 切換月份重新帶入上期並清空本期，避免誤留其他月份值。開立月帳單沿用本月已存資料，否則帶入上個月本期。
+- 語音草稿：支出／房貸隱藏租約選單及轉出入；收到租金才顯示房號與租客；轉帳只顯示轉出入及共通資料。切換立即更新欄位與核對提示。
+- 請實機測試同租約跨月、無上期紀錄、不同租客、手動修改讀數與語音類型反覆切換。下一頁確認前不保存交易。
+- 先匯出完整備份，再解壓縮安裝app-release.apk覆蓋更新。
 
 ## 0.21 收款紀錄查詢
 
