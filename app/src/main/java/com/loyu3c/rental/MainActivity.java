@@ -1086,12 +1086,20 @@ public class MainActivity extends Activity {
         if(categoryRows.isEmpty()){error(new IllegalArgumentException("請先啟用至少一個支出類別"));return;}
         String[] categories=new String[categoryRows.size()+1];categories[0]="請選支出分類";for(int i=0;i<categoryRows.size();i++)categories[i+1]=categoryRows.get(i).optString("name");
         Spinner category=choice(layout,"支出類別",categories);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
-        layout.addView(text("各棟分攤金額：不分攤的留空。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
+        layout.addView(text("各棟分攤金額：均分會覆寫下方全部金額，可再手動調整；不分攤的留空。餘數由上至下各加1元。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++)fields.add(labeledNumber(layout,properties.optJSONObject(i).optString("name")));
         if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));for(int c=0;c<categoryRows.size();c++)if(categoryRows.get(c).optString("id").equals(draft.optString("category")))category.setSelection(c+1);try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
         TextView sumLabel=text("分攤合計：待輸入",16,Color.rgb(90,61,37));layout.addView(sumLabel);
         TextWatcher watch=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){try{long sum=0;for(EditText f:fields){long n=amount(f,true);if(n>0)sum+=n;}long paid=amount(total,true);sumLabel.setText("分攤合計 $"+sum+(paid<0?"":" · 差額 $"+(paid-sum)));}catch(Exception e){sumLabel.setText("金額格式不正確");}}public void afterTextChanged(Editable e){}};
         total.addTextChangedListener(watch);for(EditText f:fields)f.addTextChangedListener(watch);
+        Button equal=styledButton("均分",false,false);equal.setTextSize(13);equal.setMinWidth(0);equal.setMinimumWidth(0);equal.setPadding(dp(10),dp(8),dp(10),dp(8));equal.setContentDescription("將總付款金額均分至下方全部不動產");
+        LinearLayout totalRow=(LinearLayout)total.getParent();LinearLayout.LayoutParams equalParams=new LinearLayout.LayoutParams(-2,-2);equalParams.leftMargin=dp(6);totalRow.addView(equal,equalParams);
+        equal.setOnClickListener(v->{try{
+            long paid=amount(total,false);long[] values=Bookkeeping.equalSplit(paid,fields.size());
+            for(int i=0;i<fields.size();i++)fields.get(i).setText(String.valueOf(values[i]));
+            Toast.makeText(this,"已均分至 "+fields.size()+" 個不動產，可再手動調整"+(paid%fields.size()==0?"":"；餘數由上至下各加1元"),Toast.LENGTH_LONG).show();
+        }catch(Exception e){total.setError(e.getMessage());total.requestFocus();}});
+
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("支出與分攤").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONArray splits=new JSONArray();for(int i=0;i<fields.size();i++){long n=amount(fields.get(i),true);if(n>0)splits.put(new JSONObject().put("propertyId",properties.getJSONObject(i).getString("id")).put("amount",n));}

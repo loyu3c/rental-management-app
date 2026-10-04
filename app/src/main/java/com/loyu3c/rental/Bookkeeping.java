@@ -7,6 +7,13 @@ import java.util.*;
 /** One cash movement per payment. Property splits are reporting dimensions only. */
 public final class Bookkeeping {
     public static final String[] CATEGORIES={"修繕","電梯保養","房貸扣款","其他費用"};
+    /** Integer dollars; distribute the remainder in visible property order. */
+    public static long[] equalSplit(long total,int count) {
+        if(total<=0||total>1000000000L)throw new IllegalArgumentException("請填總付款金額（1至1,000,000,000元）");
+        if(count<=0)throw new IllegalArgumentException("請先建立分攤的不動產");
+        long[] values=new long[count];long base=total/count,remainder=total%count;
+        for(int i=0;i<count;i++)values[i]=base+(i<remainder?1:0);return values;
+    }
     public static boolean sameReceiptAccount(JSONObject a,JSONObject b) {
         String left=a.optString("accountId"),right=b.optString("accountId");
         return !left.isEmpty()&&!right.isEmpty()?left.equals(right):a.optString("account").equals(b.optString("account"));
