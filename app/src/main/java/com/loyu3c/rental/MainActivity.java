@@ -175,9 +175,22 @@ public class MainActivity extends Activity {
         toggle.setOnClickListener(v->{boolean open=items.getVisibility()!=android.view.View.VISIBLE;items.setVisibility(open?android.view.View.VISIBLE:android.view.View.GONE);toggle.setText(title+(open?"  ▴":"  ▾"));toggle.setContentDescription(title+(open?"，已展開":"，已收合"));});toggle.setContentDescription(title+"，已收合");
     }
     private void cardAction(LinearLayout box,String label,Runnable run) {
-        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.END);box.addView(row,new LinearLayout.LayoutParams(-1,-2));
-        Button button=styledButton(label,false,label.startsWith("撤銷"));button.setTextSize(13);button.setOnClickListener(v->run.run());button.setContentDescription(label+"，此筆紀錄");
-        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-2,-2);params.setMargins(0,dp(10),0,0);row.addView(button,params);
+        LinearLayout buttons;
+        if(box.getTag() instanceof LinearLayout)buttons=(LinearLayout)box.getTag();
+        else {
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.BOTTOM|Gravity.END);
+            View last=box.getChildCount()>1?box.getChildAt(1):null;
+            if(last instanceof TextView){box.removeView(last);last.setPadding(0,dp(4),dp(10),0);row.addView(last,new LinearLayout.LayoutParams(0,-2,1));}
+            else {View spacer=new View(this);row.addView(spacer,new LinearLayout.LayoutParams(0,0,1));}
+            buttons=new LinearLayout(this);buttons.setOrientation(LinearLayout.VERTICAL);buttons.setGravity(Gravity.END);row.addView(buttons,new LinearLayout.LayoutParams(-2,-2));box.addView(row,Math.min(1,box.getChildCount()),new LinearLayout.LayoutParams(-1,-2));box.setTag(buttons);
+        }
+        Button button=styledButton(label,false,label.startsWith("撤銷"));button.setTextSize(13);button.setPadding(dp(12),dp(8),dp(12),dp(8));button.setMinimumWidth(dp(64));button.setOnClickListener(v->run.run());button.setContentDescription(label+"，此筆紀錄");
+        buttons.addView(button,new LinearLayout.LayoutParams(-2,-2));
+    }
+    private void markVoided(LinearLayout box) {
+        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(239,237,233));bg.setStroke(dp(1),Color.rgb(221,218,211));bg.setCornerRadius(dp(16));box.setBackground(bg);
+        for(int i=0;i<box.getChildCount();i++)if(box.getChildAt(i) instanceof TextView){TextView value=(TextView)box.getChildAt(i);value.setTextColor(Color.rgb(126,123,117));value.setPaintFlags(value.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);value.setTypeface(null,Typeface.NORMAL);}
+        TextView status=text("已撤銷 · 僅供歷史查閱",12,Color.rgb(110,107,101));status.setPadding(0,dp(4),0,0);box.addView(status);
     }
     private LinearLayout inputRow(LinearLayout layout,String label) {
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
@@ -676,18 +689,18 @@ public class MainActivity extends Activity {
                 LinearLayout monthBox=card(entry.getKey()+" · 當月帳單","應收 $"+total+" · 已付 $"+paid+"\n待繳 $"+(total-paid));
                 LinearLayout details=form();details.setVisibility(View.GONE);monthBox.addView(details);
                 LinearLayout monthParent=body;body=details;
-                card("帳單內容",(hasRent?"租金 $"+rent:"租金尚未建立")+"\n"+utility+detail+"\n已建立合計 $"+total+" · 已付 $"+paid+"\n尚需繳付 $"+(total-paid));
+                LinearLayout billDetails=card("帳單內容",(hasRent?"租金 $"+rent:"租金尚未建立")+"\n"+utility+detail+"\n已建立合計 $"+total+" · 已付 $"+paid+"\n尚需繳付 $"+(total-paid));
                 for(JSONObject bill:entry.getValue())if(bill.has("meterReadingId")){JSONObject meter=find("meterReadings",bill.optString("meterReadingId"));if(meter!=null&&!meter.optString("file").isEmpty())action("查看此帳單的電表照片",()->viewMeterPhoto(meter.optString("file")));}
                 final String billMonth=entry.getKey();action("複製 "+billMonth+" 繳費明細",()->copyBill(lease,billMonth));
-                for(JSONObject r:entry.getValue())if(!lease.has("terminatedOn")&&Ledger.paid(r.getString("id"),receipts)==0)action("撤銷 "+r.optString("month")+" 的"+r.optString("kind")+"項目",()->deleteInvoice(r));
+                for(JSONObject r:entry.getValue())if(!lease.has("terminatedOn")&&Ledger.paid(r.getString("id"),receipts)==0)cardAction(billDetails,"撤銷"+r.optString("kind"),()->deleteInvoice(r));
                 body=monthParent;
                 cardAction(monthBox,"展開／收合明細",()->details.setVisibility(details.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
             }
             if(months.isEmpty())card("尚無帳單","建立當月租金與水電後，會顯示在這裡。");
             card("收款紀錄","實際租金與水電收款，以及結算抵付紀錄。");
             for(int i=receipts.length()-1;i>=0;i--) {JSONObject r=receipts.getJSONObject(i);if(!lease.optString("id").equals(r.getString("leaseId")))continue;
-                card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),r.getString("account")+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
-                if(!lease.has("terminatedOn"))action("撤銷此筆錯誤收款",()->deleteReceipt(r));
+                LinearLayout receiptBox=card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),r.getString("account")+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
+                if(!lease.has("terminatedOn"))cardAction(receiptBox,"撤銷",()->deleteReceipt(r));
             }
         }catch(Exception e){error(e);}finally{body=previous;}
     }
@@ -827,7 +840,7 @@ public class MainActivity extends Activity {
         JSONArray rows=data("deposits");List<JSONObject> sorted=new ArrayList<>();for(int i=0;i<rows.length();i++)if(lease.getString("id").equals(rows.getJSONObject(i).getString("leaseId")))sorted.add(rows.getJSONObject(i));
         sorted.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
         for(JSONObject r:sorted){LinearLayout record=card(r.getString("date")+" · "+r.getString("kind")+" $"+r.getLong("amount"),accountName(r.getString("accountId"))+"\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷："+r.optString("voidReason"):""));
-            if(!r.getBoolean("void")&&!lease.has("terminatedOn"))cardAction(record,"撤銷紀錄",()->voidMovement("deposits",r));}
+            if(r.getBoolean("void"))markVoided(record);else if(!lease.has("terminatedOn"))cardAction(record,"撤銷",()->voidMovement("deposits",r));}
     }
     private void depositForm(JSONObject lease,boolean refund) {
         if(lease.has("terminatedOn")&&!refund){error(new IllegalArgumentException("已退租不能新增押金收取"));return;}
@@ -964,7 +977,7 @@ public class MainActivity extends Activity {
             for(JSONObject r:rows){boolean transfer=r.has("fromId"),voided=r.optBoolean("void");if(!expenseMonth.isEmpty()&&!r.optString("date").startsWith(expenseMonth))continue;if(expenseFilter==1&&(transfer||voided)||expenseFilter==2&&(!transfer||voided)||expenseFilter==3&&!voided)continue;
                 String title=r.optString("date")+" · "+(transfer?"轉帳":r.optString("category"))+" $"+r.optLong("amount");String detail=r.optString("description")+(voided?"\n已撤銷錯誤紀錄":"");
                 if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");if(splits!=null)for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
-                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;totals.add(r);matches++;if(shown>=expenseLimit)continue;shown++;LinearLayout box=card(title,detail);if(!voided)cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
+                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;totals.add(r);matches++;if(shown>=expenseLimit)continue;shown++;LinearLayout box=card(title,detail);if(voided)markVoided(box);else cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
             }
             summary.setText("符合條件的有效支出 $"+totals.expenses+" · 轉帳 $"+totals.transfers+"\n包含尚未載入的符合紀錄；已撤銷不計，轉帳不列支出。" );
             if(matches==0)card("沒有符合條件的紀錄",rows.isEmpty()?"可以逐步補登半年資料。":"請調整月份、紀錄類型或搜尋文字。");else {body.addView(text("顯示 "+shown+" / "+matches+" 筆",14,Color.DKGRAY));if(matches>shown)action("載入更多紀錄",()->{expenseLimit+=15;drawExpenseRecords(records);});}
@@ -1143,7 +1156,7 @@ public class MainActivity extends Activity {
                     lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("kind")+" · "+receiptTenant(r)).put("delta",r.getString("kind").equals("收到押金")?r.getLong("amount"):-r.getLong("amount")).put("note",r.getString("note")).put("sourceKey","deposits").put("sourceId",r.getString("id")));}
                 JSONArray settlements=data("settlements");for(int i=0;i<settlements.length();i++){JSONObject st=settlements.getJSONObject(i);JSONArray payments=st.getJSONArray("payments");for(int j=0;j<payments.length();j++){JSONObject p=payments.getJSONObject(j);if(id.equals(p.getString("accountId")))lines.add(new JSONObject().put("date",p.getString("date")).put("label","退租結算補繳 · "+st.getString("unitCodeSnapshot")+" · "+st.getString("tenantSnapshot")).put("delta",p.getLong("amount")).put("note",p.getString("note")));}}
                 lines.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());int n=0;
-                for(JSONObject r:lines) {if(LocalDate.parse(r.getString("date")).isAfter(LocalDate.parse(end)))continue;long delta=r.getLong("delta");card(r.getString("date")+" · "+r.getString("label"),(delta>=0?"+":"")+fmt(delta)+"\n"+r.getString("note")+(LocalDate.parse(r.getString("date")).isBefore(LocalDate.parse(start))?"\n歷史補登，未加減期初餘額":""));n++;if(r.has("sourceKey")){JSONObject source=find(r.optString("sourceKey"),r.optString("sourceId"));if(source!=null&&!(r.optString("sourceKey").equals("deposits")&&settled(source.optString("leaseId"))))action("撤銷此筆錯誤紀錄",()->voidMovement(r.optString("sourceKey"),source));}}
+                for(JSONObject r:lines) {if(LocalDate.parse(r.getString("date")).isAfter(LocalDate.parse(end)))continue;long delta=r.getLong("delta");LinearLayout statementBox=card(r.getString("date")+" · "+r.getString("label"),(delta>=0?"+":"")+fmt(delta)+"\n"+r.getString("note")+(LocalDate.parse(r.getString("date")).isBefore(LocalDate.parse(start))?"\n歷史補登，未加減期初餘額":""));n++;if(r.has("sourceKey")){JSONObject source=find(r.optString("sourceKey"),r.optString("sourceId"));if(source!=null&&!(r.optString("sourceKey").equals("deposits")&&settled(source.optString("leaseId"))))cardAction(statementBox,"撤銷",()->voidMovement(r.optString("sourceKey"),source));}}
                 if(n==0)card("尚無此日期前的流水","請記帳或對應舊收款；未有紀錄不代表存摺沒有交易。");
                 JSONArray checks=data("reconciliations");for(int i=checks.length()-1;i>=0;i--){JSONObject r=checks.getJSONObject(i);if(!id.equals(r.getString("accountId")))continue;
                     long current=balance(currentAccount,r.getString("date"));card("對帳紀錄 "+r.getString("date"),"實際 $"+r.getLong("actual")+" · 當時帳面 $"+r.getLong("book")+"\n當時差額 $"+(r.getLong("actual")-r.getLong("book"))+"\n依目前登錄重算 $"+current+" · 差額 $"+(r.getLong("actual")-current)+"\n"+r.optString("note"));}
@@ -1263,9 +1276,10 @@ public class MainActivity extends Activity {
         LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{
             card("抄電表與照片",lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant")+"\n紀錄不會自動開單；建立帳單時帶入同租約、同月份最新有效讀數。照片可點開檢查。已開帳單不會被改動。");
             action("＋ 新增抄表紀錄",()->meterForm(lease));JSONArray rows=data("meterReadings");for(int i=rows.length()-1;i>=0;i--){JSONObject r=rows.getJSONObject(i);if(!lease.optString("id").equals(r.optString("leaseId")))continue;
-                card(r.getString("month")+" · 抄表日 "+r.getString("date"),"電表 "+fmt(r.getLong("previous"))+" → "+fmt(r.getLong("current"))+" · 用量 "+fmt(r.getLong("current")-r.getLong("previous"))+" 度\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷錯誤紀錄":""));
-                if(!r.getString("file").isEmpty())action("查看電表照片",()->viewMeterPhoto(r.optString("file")));
-                if(!r.getBoolean("void"))action("撤銷此筆錯誤抄表",()->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}});
+                LinearLayout meterBox=card(r.getString("month")+" · 抄表日 "+r.getString("date"),"電表 "+fmt(r.getLong("previous"))+" → "+fmt(r.getLong("current"))+" · 用量 "+fmt(r.getLong("current")-r.getLong("previous"))+" 度\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷錯誤紀錄":""));
+                if(r.getBoolean("void"))markVoided(meterBox);
+                if(!r.getString("file").isEmpty())cardAction(meterBox,"照片",()->viewMeterPhoto(r.optString("file")));
+                if(!r.getBoolean("void"))cardAction(meterBox,"撤銷",()->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}});
             }
         }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("抄電表／照片",layout,refresh);
     }
