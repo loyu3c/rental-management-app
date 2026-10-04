@@ -252,6 +252,20 @@ public class MainActivity extends Activity {
         }
         return future?"待起租":history?"租約已到期":"未建租約";
     }
+    private String currentTenant(JSONObject unit) {
+        JSONArray leases=data("leases"),units=data("units");
+        for(int i=0;i<leases.length();i++) {
+            JSONObject lease=leases.optJSONObject(i),leasedUnit=null;
+            for(int j=0;j<units.length();j++)if(units.optJSONObject(j).optString("id").equals(lease.optString("unitId")))leasedUnit=units.optJSONObject(j);
+            boolean same=unit.optString("id").equals(lease.optString("unitId"));
+            boolean whole=leasedUnit!=null&&leasedUnit.optString("propertyId").equals(unit.optString("propertyId"))&&leasedUnit.optString("type").equals("整棟");
+            if(!same&&!whole)continue;
+            LocalDate start=LocalDate.parse(lease.optString("start")),end=LocalDate.parse(lease.optString("terminatedOn",lease.optString("end")));
+            if(!today().isBefore(start)&&!today().isAfter(end))return lease.optString("tenant");
+        }
+        return "";
+    }
+    private String tenantLabel(JSONObject unit) {String tenant=currentTenant(unit);return tenant.isEmpty()?"目前無租客":"目前租客："+tenant;}
     private void propertyScreen() {
         JSONObject property=find("properties",propertyId),unit=find("units",unitId);
         if(property==null) {propertyId="";unitId="";action("＋ 新增不動產",this::addProperty);
@@ -266,18 +280,18 @@ public class MainActivity extends Activity {
         unitId="";card(property.optString("name"),property.optString("type"));
         action("修改不動產名稱",()->editName("properties",property,"name","不動產名稱"));
         action("＋ 新增出租單位",()->addUnit(propertyId,property.optString("name")));
-        EditText search=field(body,"搜尋代號，例如 R1401、C1");
+        EditText search=field(body,"搜尋代號或租客姓名");
         Spinner filter=choice(body,new String[]{"全部","出租中","待起租","租約已到期","未建租約"});
         Spinner sort=choice(body,new String[]{"代號由小到大","代號由大到小"});
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
             list.removeAllViews();List<JSONObject> rows=new ArrayList<>();JSONArray units=data("units");
             for(int i=0;i<units.length();i++) {JSONObject u=units.optJSONObject(i);String st=status(u);
-                if(!propertyId.equals(u.optString("propertyId"))||!u.optString("code").toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
+                if(!propertyId.equals(u.optString("propertyId"))||!(u.optString("code")+" "+currentTenant(u)).toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
                 if(filter.getSelectedItemPosition()>0&&!st.startsWith(filter.getSelectedItem().toString()))continue;rows.add(u);}
             rows.sort((x,y)->natural(x.optString("code"),y.optString("code"))*(sort.getSelectedItemPosition()==0?1:-1));
             LinearLayout previous=body;body=list;
-            for(JSONObject u:rows)tapCard(u.optString("code"),u.optString("type")+" · "+status(u),()->openUnit(u));
+            for(JSONObject u:rows)tapCard(u.optString("code"),u.optString("type")+" · "+status(u)+"\n"+tenantLabel(u),()->openUnit(u));
             if(rows.isEmpty())card("沒有符合的單位","可調整搜尋或篩選條件。");body=previous;
         };
         search.addTextChangedListener(new TextWatcher(){ public void beforeTextChanged(CharSequence s,int st,int c,int a){} public void onTextChanged(CharSequence s,int st,int b,int c){refresh.run();}public void afterTextChanged(Editable e){} });
@@ -286,7 +300,7 @@ public class MainActivity extends Activity {
     }
     private void unitScreen(JSONObject property,JSONObject unit) {
         action("‹ "+property.optString("name")+" 的出租單位",()->{unitId="";render();});
-        card(unit.optString("code"),unit.optString("type")+" · "+status(unit));
+        card(unit.optString("code"),unit.optString("type")+" · "+status(unit)+"\n"+tenantLabel(unit));
         action("修改代號",()->editName("units",unit,"code","出租代號"));
         action("＋ 新增租約／換新租客",()->addLease(unit));
         JSONArray leases=data("leases");List<JSONObject> rows=new ArrayList<>();
