@@ -1,6 +1,15 @@
 # APK 整合測試版
 
-版本 0.26.0-preview，versionCode=29，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.27.0-preview，versionCode=30，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.27 支出均分
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37209055279/artifacts/11304904052)。Release單元測試、編譯、lint及Google契約測試通過；手機排版待實測。
+
+- 記錄支出 → 總付款金額右側「均分」。依下方全部不動產數量覆寫分攤，可再手動調整。
+- 256元／4筆各64元；256元／3筆86、85、85。整數餘數由上至下各加1元，精確等於總額。
+- 空白、零及超過上限的總額會在欄位提示，不改原分攤。總額後續變更可再次均分，仍需預覽確認才保存。
+- 合併0.26排序與語音日期功能。更新前匯出完整備份，再解壓安裝app-release.apk；請核對窄螢幕按鈕、千位格式、分攤即時合計與手動修改。
 
 ## 0.26 類別排序與語音日期
 
