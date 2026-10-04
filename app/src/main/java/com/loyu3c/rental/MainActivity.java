@@ -151,10 +151,11 @@ public class MainActivity extends Activity {
         b.setOnClickListener(v -> run.run()); body.addView(b,params);
     }
     private void shortcut(LinearLayout row,String label,int iconId,Runnable run) {
-        Button button=new Button(this);button.setText(label);button.setTextSize(13);button.setAllCaps(false);button.setTextColor(Color.rgb(90,61,37));
-        android.graphics.drawable.Drawable icon=getDrawable(iconId).mutate();icon.setTint(Color.rgb(104,70,39));icon.setBounds(0,0,dp(26),dp(26));button.setCompoundDrawables(null,icon,null,null);button.setCompoundDrawablePadding(dp(6));
-        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(238,226,211));bg.setCornerRadius(dp(12));button.setBackground(bg);button.setPadding(dp(2),dp(10),dp(2),dp(10));button.setOnClickListener(v->run.run());
-        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(92),1);params.setMargins(dp(3),dp(5),dp(3),dp(8));row.addView(button,params);
+        LinearLayout button=new LinearLayout(this);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setPadding(dp(4),dp(12),dp(4),dp(12));button.setMinimumHeight(dp(92));
+        ImageView icon=new ImageView(this);icon.setImageResource(iconId);icon.setColorFilter(Color.rgb(104,70,39));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);button.addView(icon,new LinearLayout.LayoutParams(dp(26),dp(26)));
+        TextView caption=text(label,13,Color.rgb(90,61,37));caption.setGravity(Gravity.CENTER);caption.setIncludeFontPadding(false);caption.setPadding(0,dp(8),0,0);button.addView(caption,new LinearLayout.LayoutParams(-1,-2));
+        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(238,226,211));bg.setCornerRadius(dp(12));button.setBackground(bg);button.setClickable(true);button.setFocusable(true);button.setContentDescription(label);button.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);caption.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);button.setOnClickListener(v->run.run());
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-1,1);params.setMargins(dp(3),dp(6),dp(3),dp(6));row.addView(button,params);
     }
     private void actionGroup(String title,String[] labels,Runnable[] runs) {
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(255,252,247));bg.setCornerRadius(dp(12));box.setBackground(bg);
@@ -857,12 +858,14 @@ public class MainActivity extends Activity {
     private void drawExpenseRecords(LinearLayout records) {
         LinearLayout previous=body;body=records;records.removeAllViews();try {
             JSONArray expenses=data("expenses"),transfers=data("transfers");List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++)rows.add(expenses.optJSONObject(i));for(int i=0;i<transfers.length();i++)rows.add(transfers.optJSONObject(i));rows.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
+            MovementTotals totals=new MovementTotals();TextView summary=text("",14,Color.rgb(90,61,37));body.addView(summary);
             int matches=0,shown=0;String query=expenseSearch.trim().toLowerCase(Locale.ROOT);
             for(JSONObject r:rows){boolean transfer=r.has("fromId"),voided=r.optBoolean("void");if(!expenseMonth.isEmpty()&&!r.optString("date").startsWith(expenseMonth))continue;if(expenseFilter==1&&(transfer||voided)||expenseFilter==2&&(!transfer||voided)||expenseFilter==3&&!voided)continue;
                 String title=r.optString("date")+" · "+(transfer?"轉帳":r.optString("category"))+" $"+r.optLong("amount");String detail=r.optString("description")+(voided?"\n已撤銷錯誤紀錄":"");
                 if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");if(splits!=null)for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
-                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;matches++;if(shown>=expenseLimit)continue;shown++;LinearLayout box=card(title,detail);if(!voided)cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
+                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;totals.add(r);matches++;if(shown>=expenseLimit)continue;shown++;LinearLayout box=card(title,detail);if(!voided)cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
             }
+            summary.setText("符合條件的有效支出 $"+totals.expenses+" · 轉帳 $"+totals.transfers+"\n包含尚未載入的符合紀錄；已撤銷不計，轉帳不列支出。" );
             if(matches==0)card("沒有符合條件的紀錄",rows.isEmpty()?"可以逐步補登半年資料。":"請調整月份、紀錄類型或搜尋文字。");else {body.addView(text("顯示 "+shown+" / "+matches+" 筆",14,Color.DKGRAY));if(matches>shown)action("載入更多紀錄",()->{expenseLimit+=15;drawExpenseRecords(records);});}
         }finally{body=previous;}
     }
