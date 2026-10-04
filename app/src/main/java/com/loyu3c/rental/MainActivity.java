@@ -418,15 +418,15 @@ public class MainActivity extends Activity {
             JSONArray items = data(key);
             for (int i = 0; i < items.length(); i++) {
                 JSONObject item = items.optJSONObject(i);
-                boolean scope = key.equals("properties") || item.optString("propertyId").equals(original.optString("propertyId"));
+                boolean scope = (key.equals("properties")||key.equals("accounts")) || item.optString("propertyId").equals(original.optString("propertyId"));
                 if (!item.optString("id").equals(original.optString("id")) && scope && item.optString(column).equalsIgnoreCase(next)) {
-                    value.setError("名稱或代號已存在"); return;
+                    value.setError(key.equals("accounts")?"帳戶名稱已存在，請使用不同名稱":"名稱或代號已存在"); return;
                 }
             }
             try {
                 for (int i = 0; i < items.length(); i++) if (items.optJSONObject(i).optString("id").equals(original.optString("id")))
                     items.optJSONObject(i).put(column, next);
-                if (save(key, items)) { dialog.dismiss(); render(); }
+                if (key.equals("accounts")?saveChecked(key,items):save(key, items)) { dialog.dismiss(); render(); }
             } catch (JSONException e) { value.setError("保存格式錯誤"); }
         })); dialog.show();
     }
@@ -699,7 +699,7 @@ public class MainActivity extends Activity {
             if(months.isEmpty())card("尚無帳單","建立當月租金與水電後，會顯示在這裡。");
             card("收款紀錄","實際租金與水電收款，以及結算抵付紀錄。");
             for(int i=receipts.length()-1;i>=0;i--) {JSONObject r=receipts.getJSONObject(i);if(!lease.optString("id").equals(r.getString("leaseId")))continue;
-                LinearLayout receiptBox=card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),r.getString("account")+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
+                LinearLayout receiptBox=card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),(r.optString("accountId").isEmpty()?r.getString("account"):accountName(r.optString("accountId")))+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
                 if(!lease.has("terminatedOn"))cardAction(receiptBox,"撤銷",()->deleteReceipt(r));
             }
         }catch(Exception e){error(e);}finally{body=previous;}
@@ -1114,12 +1114,13 @@ public class MainActivity extends Activity {
     }
     private int unlinkedReceipts() {JSONArray rows=data("receipts");int n=0;for(int i=0;i<rows.length();i++)if(rows.optJSONObject(i).optBoolean("cash",true)&&rows.optJSONObject(i).optString("accountId").isEmpty())n++;return n;}
     private void showPanel(String title,LinearLayout layout) {showPanel(title,layout,null);}
-    private void showPanel(String title,LinearLayout layout,Runnable refresh) {
+    private void showPanel(String title,LinearLayout layout,Runnable refresh) {showPanel(title,layout,refresh,()->title);}
+    private void showPanel(String title,LinearLayout layout,Runnable refresh,java.util.function.Supplier<String> currentTitle) {
         LinearLayout page=form();page.setPadding(dp(16),dp(12),dp(16),dp(12));page.setBackgroundColor(Color.rgb(248,244,237));
         TextView heading=text(title,21,Color.rgb(83,60,40));heading.setTypeface(null,Typeface.BOLD);page.addView(heading);
         ScrollView scroll=new ScrollView(this);layout.setPadding(0,dp(8),0,dp(12));scroll.addView(layout);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();Button close=styledButton("關閉",false,false);close.setOnClickListener(v->dialog.dismiss());page.addView(close,new LinearLayout.LayoutParams(-1,-2));
-        if(refresh!=null)livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();scroll.post(()->scroll.scrollTo(0,y));});
+        if(refresh!=null)livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();heading.setText(currentTitle.get());scroll.post(()->scroll.scrollTo(0,y));});
         dialog.setOnDismissListener(d->livePanels.remove(dialog));dialog.show();
         if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
     }
@@ -1137,7 +1138,7 @@ public class MainActivity extends Activity {
         }catch(Exception e){error(e);}finally{body=previous;}
     }
     private void accountStatement(JSONObject account) {
-        LinearLayout layout=form();EditText date=dateField(layout,"查看／對帳日期（當日結束餘額）",false);date.setText(today().toString());
+        LinearLayout layout=form();Button rename=styledButton("修改帳戶名稱",false,false);rename.setOnClickListener(v->{JSONObject current=find("accounts",account.optString("id"));if(current!=null)editName("accounts",current,"name","帳戶名稱");});layout.addView(rename);EditText date=dateField(layout,"查看／對帳日期（當日結束餘額）",false);date.setText(today().toString());
         Button edit=styledButton("修正期初設定（填錯時使用）",false,false);edit.setOnClickListener(v->editOpening(find("accounts",account.optString("id"))));layout.addView(edit);
         TextView summary=text("",16,Color.rgb(90,61,37));layout.addView(summary);
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
@@ -1149,7 +1150,7 @@ public class MainActivity extends Activity {
                 action("輸入存摺／實際現金餘額對帳",()->reconciliationForm(currentAccount,end));
                 List<JSONObject> lines=new ArrayList<>();
                 JSONArray receipts=data("receipts"),expenses=data("expenses"),transfers=data("transfers");
-                for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.optBoolean("cash",true)&&id.equals(r.optString("accountId")))lines.add(new JSONObject().put("date",r.getString("date")).put("label","收款 "+receiptTenant(r)+" · "+r.getString("account")).put("delta",r.getLong("amount")).put("note",r.optString("note")));}
+                for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.optBoolean("cash",true)&&id.equals(r.optString("accountId")))lines.add(new JSONObject().put("date",r.getString("date")).put("label","收款 "+receiptTenant(r)+" · "+accountName(r.optString("accountId"))).put("delta",r.getLong("amount")).put("note",r.optString("note")));}
                 for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(id.equals(r.getString("accountId"))&&!r.optBoolean("void"))lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("category")).put("delta",-r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","expenses").put("sourceId",r.getString("id")));}
                 for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void"))continue;boolean from=id.equals(r.getString("fromId")),to=id.equals(r.getString("toId"));if(from||to)lines.add(new JSONObject().put("date",r.getString("date")).put("label","轉帳 "+accountName(r.getString("fromId"))+" → "+accountName(r.getString("toId"))).put("delta",from?-r.getLong("amount"):r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","transfers").put("sourceId",r.getString("id")));}
                 JSONArray deposits=data("deposits");for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);if(r.getString("kind").equals("押金抵付費用")||r.getBoolean("void")||!id.equals(r.getString("accountId")))continue;
@@ -1162,7 +1163,7 @@ public class MainActivity extends Activity {
                     long current=balance(currentAccount,r.getString("date"));card("對帳紀錄 "+r.getString("date"),"實際 $"+r.getLong("actual")+" · 當時帳面 $"+r.getLong("book")+"\n當時差額 $"+(r.getLong("actual")-r.getLong("book"))+"\n依目前登錄重算 $"+current+" · 差額 $"+(r.getLong("actual")-current)+"\n"+r.optString("note"));}
             }catch(Exception e){summary.setText("請輸入有效日期，且不得早於帳戶起算日。");}finally{body=previous;}
         };
-        date.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel(account.optString("name")+" 流水與對帳",layout,refresh);
+        date.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel(account.optString("name")+" 流水與對帳",layout,refresh,()->accountName(account.optString("id"))+" 流水與對帳");
     }
     private void reconciliationForm(JSONObject account,String date) {
         LinearLayout layout=form();EditText actual=labeledNumber(layout,"存摺當日結束餘額／點算現金");EditText note=labeledField(layout,"核對備註");
