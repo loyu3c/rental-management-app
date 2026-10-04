@@ -727,8 +727,9 @@ public class MainActivity extends Activity {
                 water.setEnabled(u==null);prior.setEnabled(u==null);current.setEnabled(u==null);
                 water.setText(u!=null?u.optString("water"):lease.isNull("water")?"":lease.optString("water"));
                 JSONObject reading=MeterReadings.latest(data("meterReadings"),lease.optString("id"),ym.toString());
-                prior.setText(u!=null?u.optString("previous"):reading==null?"":reading.optString("previous"));current.setText(u!=null?u.optString("current"):reading==null?"":reading.optString("current"));
-                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數"+(reading==null?"":" · 已帶入抄表日期 "+reading.optString("date")));
+                JSONObject previousPeriod=MeterReadings.previousPeriod(data("meterReadings"),invoices,lease.optString("id"),ym.toString());
+                prior.setText(u!=null?u.optString("previous"):reading!=null?reading.optString("previous"):previousPeriod==null?"":previousPeriod.optString("current"));current.setText(u!=null?u.optString("current"):reading==null?"":reading.optString("current"));
+                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數"+(reading!=null?" · 已帶入抄表日期 "+reading.optString("date"):previousPeriod==null?" · 上期讀數請自行填寫":" · 上期讀數帶入 "+previousPeriod.optString("month")+" "+previousPeriod.optString("source")));
             }catch(Exception ignored){}finally{refreshing[0]=false;}update.run();
         };
         TextWatcher totals=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){update.run();}public void afterTextChanged(Editable e){}};
@@ -1010,11 +1011,25 @@ public class MainActivity extends Activity {
     }
     private void voiceDraftReview(JSONObject draft,AlertDialog source) throws JSONException {
         LinearLayout layout=form();layout.addView(text("辨識文字：\n"+draft.getString("raw"),16,Color.DKGRAY));Spinner kind=choice(layout,"這筆帳務類型",new String[]{"請選類型","支出／房貸扣款","收到租金","提款／轉帳"});kind.setSelection(draft.optString("kind").equals("支出")?1:draft.optString("kind").equals("收款")?2:draft.optString("kind").equals("轉帳")?3:0);
-        layout.addView(text("草稿日期："+(draft.optString("date").isEmpty()?"待補選":draft.optString("date"))+"\n總金額："+(draft.isNull("amount")?"待填":"$"+draft.optLong("amount"))+"\n分類："+(draft.optString("category").isEmpty()?"待選":draft.optString("category"))+"\n付款／收款帳戶："+(draft.optString("accountId").isEmpty()?"待選":accountName(draft.optString("accountId")))+"\n轉出："+(draft.optString("fromId").isEmpty()?"待選":accountName(draft.optString("fromId")))+"\n轉入："+(draft.optString("toId").isEmpty()?"待選":accountName(draft.optString("toId"))),15,Color.DKGRAY));
-        StringBuilder split=new StringBuilder("分攤草稿：\n");JSONArray ids=draft.getJSONArray("propertyIds"),splits=draft.getJSONArray("splits");for(int i=0;i<ids.length();i++)split.append(propertyName(ids.getString(i))).append("\n");for(int i=0;i<splits.length();i++)split.append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount")).append("\n");if(ids.length()==0)split.append("待選不動產／逐棟填寫\n");layout.addView(text(split.toString(),15,Color.DKGRAY));
+        TextView summary=text("",15,Color.DKGRAY);layout.addView(summary);
+        StringBuilder split=new StringBuilder("分攤草稿：\n");JSONArray ids=draft.getJSONArray("propertyIds"),splits=draft.getJSONArray("splits");for(int i=0;i<ids.length();i++)split.append(propertyName(ids.getString(i))).append("\n");for(int i=0;i<splits.length();i++)split.append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount")).append("\n");if(ids.length()==0)split.append("待選不動產／逐棟填寫\n");TextView splitView=text(split.toString(),15,Color.DKGRAY);layout.addView(splitView);
         List<JSONObject> leases=new ArrayList<>();String[] options;JSONArray all=data("leases");for(int i=0;i<all.length();i++)if(!all.getJSONObject(i).has("terminatedOn"))leases.add(all.getJSONObject(i));options=new String[leases.size()+1];options[0]="請選租約（收到租金才需要）";for(int i=0;i<leases.size();i++){JSONObject l=leases.get(i),unit=find("units",l.optString("unitId"));options[i+1]=(unit==null?"":propertyName(unit.optString("propertyId"))+" · ")+l.optString("unitCodeSnapshot")+" · "+l.optString("tenant")+" · "+l.optString("start");}
         Spinner lease=choice(layout,"收租房號／租客",options);for(int i=0;i<leases.size();i++)if(leases.get(i).optString("id").equals(draft.optString("leaseId")))lease.setSelection(i+1);
-        StringBuilder warnings=new StringBuilder("需要核對：\n");JSONArray ws=draft.getJSONArray("warnings");for(int i=0;i<ws.length();i++)warnings.append("• ").append(ws.getString(i)).append("\n");warnings.append("下一頁仍可修改日期、金額、帳戶和分攤；不會直接入帳。");layout.addView(text(warnings.toString(),14,Color.rgb(137,83,15)));
+        View leaseRow=(View)lease.getParent();TextView warning=text("",14,Color.rgb(137,83,15));layout.addView(warning);
+        Runnable updateType=()->{
+            int selected=kind.getSelectedItemPosition();leaseRow.setVisibility(selected==2?View.VISIBLE:View.GONE);splitView.setVisibility(selected==1?View.VISIBLE:View.GONE);
+            String base="草稿日期："+(draft.optString("date").isEmpty()?"待補選":draft.optString("date"))+"\n總金額："+(draft.isNull("amount")?"待填":"$"+draft.optLong("amount"));
+            if(selected==1)base+="\n支出分類："+(draft.optString("category").isEmpty()?"待選":draft.optString("category"));
+            if(selected==1||selected==2)base+="\n"+(selected==1?"付款帳戶：":"收款帳戶：")+(draft.optString("accountId").isEmpty()?"待選":accountName(draft.optString("accountId")));
+            if(selected==3)base+="\n轉出："+(draft.optString("fromId").isEmpty()?"待選":accountName(draft.optString("fromId")))+"\n轉入："+(draft.optString("toId").isEmpty()?"待選":accountName(draft.optString("toId")));
+            summary.setText(base);StringBuilder checks=new StringBuilder("需要核對：\n");
+            if(selected==0)checks.append("• 請選帳務類型\n");if(draft.optString("date").isEmpty())checks.append("• 日期待補選\n");if(draft.isNull("amount"))checks.append("• 金額待填\n");
+            if((selected==1||selected==2)&&draft.optString("accountId").isEmpty())checks.append(selected==1?"• 付款帳戶待選\n":"• 收款帳戶待選\n");
+            if(selected==2&&lease.getSelectedItemPosition()==0)checks.append("• 收租房號／租客待選\n");if(selected==3&&(draft.optString("fromId").isEmpty()||draft.optString("toId").isEmpty()))checks.append("• 轉出／轉入帳戶待選\n");
+            String chosen=selected==1?"支出":selected==2?"收款":selected==3?"轉帳":"";if(chosen.equals(draft.optString("kind"))){JSONArray originalWarnings=draft.optJSONArray("warnings");if(originalWarnings!=null)for(int i=0;i<originalWarnings.length();i++)checks.append("• ").append(originalWarnings.optString(i)).append("\n");}
+            checks.append("請核對辨識文字及金額。下一頁仍可修改相關欄位，確認後才會入帳。");warning.setText(checks.toString());
+        };
+        AdapterView.OnItemSelectedListener linked=new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int n,long id){updateType.run();}};kind.setOnItemSelectedListener(linked);lease.setOnItemSelectedListener(linked);updateType.run();
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("檢查語音記帳草稿").setView(scroll).setNegativeButton("返回修改",null).setPositiveButton("帶入表單",null).create();dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{int selected=kind.getSelectedItemPosition();if(selected==0)throw new IllegalArgumentException("請選擇帳務類型");if(selected==2&&lease.getSelectedItemPosition()==0)throw new IllegalArgumentException("請選擇收租房號與租客");draft.put("kind",selected==1?"支出":selected==2?"收款":"轉帳");dialog.dismiss();source.dismiss();if(selected==1)expenseForm(draft);else if(selected==3)transferForm(draft);else receiptForm(leases.get(lease.getSelectedItemPosition()-1),draft);}catch(Exception e){error(e);}}));dialog.show();
     }
     private void voiceResult(int result,Intent intent) {
@@ -1259,7 +1274,10 @@ public class MainActivity extends Activity {
     }
     private void meterForm(JSONObject lease) {
         LinearLayout layout=form();EditText month=dateField(layout,"用電帳單月份",true),date=dateField(layout,"實際抄表日期",false),prior=number(layout,"上期／起始電表讀數"),current=number(layout,"本期電表讀數"),note=field(layout,"抄表備註");month.setText(YearMonth.from(today()).toString());
-        layout.addView(text("照片是讀數依據，請先填前後讀數。換租客的起始讀數請自行確認，不沿用上一位。換表／讀數倒退需另行處理。",14,Color.DKGRAY));
+        TextView origin=text("",14,Color.rgb(137,83,15));layout.addView(origin);
+        Runnable loadPrevious=()->{try{JSONObject previous=MeterReadings.previousPeriod(data("meterReadings"),data("invoices"),lease.optString("id"),dateValue(month));prior.setText(previous==null?"":previous.optString("current"));current.setText("");origin.setText(previous==null?"上一個月份沒有紀錄，請自行填上期讀數。":"已帶入 "+previous.optString("month")+" "+previous.optString("source")+" 的本期讀數；可自行修正。");}catch(Exception e){origin.setText("請先選擇用電帳單月份。");}};
+        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){loadPrevious.run();}public void afterTextChanged(Editable e){}});loadPrevious.run();
+        layout.addView(text("照片是讀數依據。同一租約只帶入上一個月份，不沿用其他租客。缺月份或換表請自行確認起始讀數。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("新增抄表紀錄").setView(scroll).setNegativeButton("取消",null).setNeutralButton("只存讀數",null).setPositiveButton("附上照片",null).create();
         dialog.setOnShowListener(v->{dialog.getButton(-3).setOnClickListener(w->{try{JSONObject row=MeterReadings.reading(lease,dateValue(month),dateValue(date),amount(prior,false),amount(current,false),"",note.getText().toString());confirmMeterPhoto(row,dialog);}catch(Exception e){error(e);}});
             dialog.getButton(-1).setOnClickListener(w->{try{JSONObject row=MeterReadings.reading(lease,dateValue(month),dateValue(date),amount(prior,false),amount(current,false),UUID.randomUUID()+".jpg",note.getText().toString());

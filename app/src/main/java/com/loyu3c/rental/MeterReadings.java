@@ -14,6 +14,13 @@ public final class MeterReadings {
     public static JSONObject latest(JSONArray rows,String lease,String month) throws JSONException {
         JSONObject result=null;for(int i=0;i<rows.length();i++){JSONObject r=rows.getJSONObject(i);if(!r.getBoolean("void")&&r.getString("leaseId").equals(lease)&&r.getString("month").equals(month))result=r;}return result;
     }
+    public static JSONObject previousPeriod(JSONArray readings,JSONArray invoices,String lease,String month) throws JSONException {
+        YearMonth previous=YearMonth.parse(month).minusMonths(1);
+        JSONObject bill=Ledger.forMonth(invoices,lease,previous,"水電");
+        if(bill!=null)return new JSONObject().put("month",previous.toString()).put("current",bill.getLong("current")).put("source","水電帳單");
+        JSONObject reading=latest(readings,lease,previous.toString());
+        return reading==null?null:new JSONObject().put("month",previous.toString()).put("current",reading.getLong("current")).put("source","抄表紀錄");
+    }
     public static Set<String> files(JSONArray rows) throws JSONException {
         Set<String> files=new LinkedHashSet<>();for(int i=0;i<rows.length();i++){String file=rows.getJSONObject(i).getString("file");if(!file.isEmpty()){if(!photoName(file))throw new IllegalArgumentException("照片檔名無效");files.add(file);}}return files;
     }
