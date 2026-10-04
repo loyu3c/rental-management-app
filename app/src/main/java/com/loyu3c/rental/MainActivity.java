@@ -40,6 +40,7 @@ public class MainActivity extends Activity {
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
     private int selected = 0;
     private String rentSearch="";private int rentFilter=0;
+    private String expenseSearch="",expenseMonth="";private int expenseFilter=0,expenseLimit=15;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -117,15 +118,13 @@ public class MainActivity extends Activity {
         LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
         for (int i = 0; i < tabs.length; i++) {
             final int index = i;
-            Button button = new Button(this); button.setText(tabs[i]); button.setTextSize(12);
             int[] icons={R.drawable.nav_home,R.drawable.nav_money,R.drawable.nav_ledger,R.drawable.nav_property,R.drawable.nav_report};
-            android.graphics.drawable.Drawable icon=getDrawable(icons[i]).mutate();icon.setTint(i==selected?Color.rgb(104,70,39):Color.rgb(115,112,106));icon.setBounds(0,0,dp(22),dp(22));
-            button.setCompoundDrawables(null,icon,null,null);button.setCompoundDrawablePadding(dp(3));button.setContentDescription(tabs[i]);
-            button.setAllCaps(false); button.setPadding(0, 0, 0, 0);
-            button.setTextColor(i == selected ? Color.rgb(104, 70, 39) : Color.DKGRAY);
-            GradientDrawable navBg=new GradientDrawable();navBg.setColor(i==selected?Color.rgb(232,213,187):Color.rgb(248,244,237));navBg.setCornerRadius(dp(12));button.setBackground(navBg);
+            LinearLayout button=new LinearLayout(this);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setPadding(dp(2),dp(8),dp(2),dp(8));button.setMinimumHeight(dp(64));
+            ImageView icon=new ImageView(this);icon.setImageResource(icons[i]);icon.setColorFilter(i==selected?Color.rgb(104,70,39):Color.rgb(115,112,106));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);button.addView(icon,new LinearLayout.LayoutParams(dp(22),dp(22)));
+            TextView label=text(tabs[i],12,i==selected?Color.rgb(104,70,39):Color.DKGRAY);label.setGravity(Gravity.CENTER);label.setPadding(0,dp(4),0,0);label.setIncludeFontPadding(false);button.addView(label,new LinearLayout.LayoutParams(-1,-2));
+            GradientDrawable navBg=new GradientDrawable();navBg.setColor(i==selected?Color.rgb(232,213,187):Color.rgb(248,244,237));navBg.setCornerRadius(dp(12));button.setBackground(navBg);button.setClickable(true);button.setFocusable(true);button.setContentDescription(tabs[i]);button.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);label.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             button.setOnClickListener(v -> { selected = index; render(); });
-            nav.addView(button, new LinearLayout.LayoutParams(0, dp(64), 1));
+            nav.addView(button,new LinearLayout.LayoutParams(0,-2,1));
         }
         root.addView(nav); setContentView(root);
     }
@@ -841,18 +840,28 @@ public class MainActivity extends Activity {
         actionGroup("帳戶管理",new String[]{"新增銀行／共用現金帳戶","查看帳戶流水與對帳","對應舊收款的實際帳戶"},new Runnable[]{this::accountForm,this::accountsDialog,this::linkReceipts});
         actionGroup("更多功能",new String[]{"押金總覽／收付","退租結算與待收／待退"},new Runnable[]{this::depositOverview,this::settlementOverview});
         TextView recent=text("近期紀錄",20,Color.rgb(77,57,39));recent.setTypeface(null,Typeface.BOLD);body.addView(recent);
-        JSONArray expenses=data("expenses"),transfers=data("transfers");
-        if(expenses.length()==0&&transfers.length()==0)card("尚無支出或轉帳","可以逐步補登半年資料。起算日前交易列報表但不再影響期初餘額。");
-        List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++)rows.add(expenses.optJSONObject(i));for(int i=0;i<transfers.length();i++)rows.add(transfers.optJSONObject(i));
-        rows.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
-        int shown=0;for(JSONObject r:rows) {
-            if(shown++>=15)break;boolean transfer=r.has("fromId");String title=r.optString("date")+" · "+(transfer?"轉帳":r.optString("category"))+" $"+r.optLong("amount");
-            String detail=r.optString("description")+(r.optBoolean("void")?"\n已撤銷錯誤紀錄":"");
-            if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));
-            else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
-            LinearLayout box=card(title,detail);if(!r.optBoolean("void"))cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
-        }
-        if(rows.size()>15)card("顯示最近15筆","其他紀錄可在帳戶流水、支出報表及完整備份查看。");
+        EditText search=field(body,"搜尋項目、帳戶或不動產");search.setText(expenseSearch);
+        Spinner type=choice(body,"紀錄類型",new String[]{"全部紀錄","有效支出","有效轉帳","已撤銷"});type.setSelection(expenseFilter);
+        Spinner scope=choice(body,"月份範圍",new String[]{"全部月份","指定月份"});scope.setSelection(expenseMonth.isEmpty()?0:1);
+        EditText month=dateField(body,"紀錄月份",true);month.setText(expenseMonth.isEmpty()?YearMonth.from(today()).toString():expenseMonth);android.view.View monthRow=(android.view.View)month.getParent();monthRow.setVisibility(expenseMonth.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
+        LinearLayout records=new LinearLayout(this);records.setOrientation(LinearLayout.VERTICAL);body.addView(records,new LinearLayout.LayoutParams(-1,-2));
+        Runnable draw=()->drawExpenseRecords(records);
+        search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){expenseSearch=s.toString();expenseLimit=15;draw.run();}public void afterTextChanged(Editable e){}});
+        type.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){expenseFilter=n;expenseLimit=15;draw.run();}});
+        scope.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){expenseMonth=n==0?"":month.getText().toString();monthRow.setVisibility(n==0?android.view.View.GONE:android.view.View.VISIBLE);expenseLimit=15;draw.run();}});
+        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){if(scope.getSelectedItemPosition()==1){expenseMonth=s.toString();expenseLimit=15;draw.run();}}public void afterTextChanged(Editable e){}});draw.run();
+    }
+    private void drawExpenseRecords(LinearLayout records) {
+        LinearLayout previous=body;body=records;records.removeAllViews();try {
+            JSONArray expenses=data("expenses"),transfers=data("transfers");List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++)rows.add(expenses.optJSONObject(i));for(int i=0;i<transfers.length();i++)rows.add(transfers.optJSONObject(i));rows.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
+            int matches=0,shown=0;String query=expenseSearch.trim().toLowerCase(Locale.ROOT);
+            for(JSONObject r:rows){boolean transfer=r.has("fromId"),voided=r.optBoolean("void");if(!expenseMonth.isEmpty()&&!r.optString("date").startsWith(expenseMonth))continue;if(expenseFilter==1&&(transfer||voided)||expenseFilter==2&&(!transfer||voided)||expenseFilter==3&&!voided)continue;
+                String title=r.optString("date")+" · "+(transfer?"轉帳":r.optString("category"))+" $"+r.optLong("amount");String detail=r.optString("description")+(voided?"\n已撤銷錯誤紀錄":"");
+                if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");if(splits!=null)for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
+                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;matches++;if(shown>=expenseLimit)continue;shown++;LinearLayout box=card(title,detail);if(!voided)cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
+            }
+            if(matches==0)card("沒有符合條件的紀錄",rows.isEmpty()?"可以逐步補登半年資料。":"請調整月份、紀錄類型或搜尋文字。");else {body.addView(text("顯示 "+shown+" / "+matches+" 筆",14,Color.DKGRAY));if(matches>shown)action("載入更多紀錄",()->{expenseLimit+=15;drawExpenseRecords(records);});}
+        }finally{body=previous;}
     }
     private String receiptTenant(JSONObject receipt) {JSONObject lease=find("leases",receipt.optString("leaseId"));return lease==null?"":lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant");}
     private String accountName(String id) {JSONObject a=find("accounts",id);return a==null?"帳戶未設定":a.optString("name");}
