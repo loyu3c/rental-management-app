@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(248, 244, 237)); root.setPadding(dp(16), dp(16), dp(16), dp(8));
         TextView heading = text("暖色帳本 / " + tabs[selected], 26, Color.rgb(83, 60, 40));
         heading.setTypeface(null, Typeface.BOLD); root.addView(heading);
-        root.addView(text("整合測試版 · 資料存在手機；Google與語音未啟用", 13, Color.rgb(137, 83, 15)));
+        root.addView(text("整合測試版 · 資料存在手機；Google同步未啟用", 13, Color.rgb(137, 83, 15)));
         ScrollView scroll = new ScrollView(this);
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -623,18 +623,21 @@ public class MainActivity extends Activity {
         for(int i=0;i<parts.length();i++){JSONObject p=parts.getJSONObject(i);for(int j=0;j<invoices.length();j++) {JSONObject r=invoices.getJSONObject(j);if(r.getString("id").equals(p.getString("invoiceId")))text.append(r.getString("month")).append(" ").append(r.getString("kind")).append(" $ ").append(p.getLong("amount")).append("\n");}}
         return text+"尚未分配 $"+(receipt.getLong("amount")-Ledger.allocated(receipt));
     }
-    private void receiptForm(JSONObject lease) {
+    private void receiptForm(JSONObject lease) {receiptForm(lease,null);}
+    private void receiptForm(JSONObject lease,JSONObject draft) {
         if(lease.has("terminatedOn")){settlementPaymentForm(lease);return;}
         List<JSONObject> accounts=accountRows();if(accounts.isEmpty()){error(new IllegalArgumentException("請先到記帳建立實際收款帳戶"));return;}
+        addDraftAccountPlaceholder(accounts,draft);
         LinearLayout layout=form();EditText date=dateField(layout,"收到租金日期",false);date.setText(today().toString());
         JSONObject unit=find("units",lease.optString("unitId")),property=unit==null?null:find("properties",unit.optString("propertyId"));
-        Spinner account=accountChoice(layout,accounts,"核對存摺的實際收款帳戶");if(property!=null)for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("propertyId").equals(property.optString("id"))){account.setSelection(i);break;}
+        Spinner account=accountChoice(layout,accounts,"核對存摺的實際收款帳戶");if(draft==null&&property!=null)for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("propertyId").equals(property.optString("id"))){account.setSelection(i);break;}
         EditText money=number(layout,"實際收到金額（含一起繳的水電費）"),note=field(layout,"備註／交易辨識，建議填存摺摘要");
+        if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(money,draft);note.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));}
         layout.addView(text("依最早月份分配，當月租金先於水電。請先算好水電並建立當月完整帳單；有舊欠款時會先抵付。請核對下個畫面的分配清單。押金另行管理。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("收到租金").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽分配",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try {
-            JSONArray invoices=data("invoices"),receipts=data("receipts");JSONObject r=Ledger.receipt(lease.getString("id"),date.getText().toString().trim(),accounts.get(account.getSelectedItemPosition()).getString("name"),amount(money,false),note.getText().toString(),invoices,receipts).put("accountId",accounts.get(account.getSelectedItemPosition()).getString("id"));
+            JSONArray invoices=data("invoices"),receipts=data("receipts");JSONObject r=Ledger.receipt(lease.getString("id"),date.getText().toString().trim(),selectedDraftAccount(accounts,account).getString("name"),amount(money,false),note.getText().toString(),invoices,receipts).put("accountId",selectedDraftAccount(accounts,account).getString("id"));
             for(int i=0;i<receipts.length();i++){JSONObject old=receipts.getJSONObject(i);if(old.getString("leaseId").equals(r.getString("leaseId"))&&old.getString("date").equals(r.getString("date"))&&Bookkeeping.sameReceiptAccount(old,r)&&old.getLong("amount")==r.getLong("amount"))throw new IllegalArgumentException("同租約、日期、帳戶與金額已有收款，請先核對避免重複。");}
             new AlertDialog.Builder(this).setMessage(display(String.valueOf("實際收款 $"+r.getLong("amount")+"\n"+allocationSummary(r,invoices)))).setNegativeButton("返回修改",null).setPositiveButton("確認入帳",(d,b)->{try{
                 JSONArray latest=data("receipts");for(int i=0;i<latest.length();i++) {JSONObject old=latest.getJSONObject(i);if(old.getString("id").equals(r.getString("id")))return;
@@ -788,9 +791,10 @@ public class MainActivity extends Activity {
         String[] names=new String[accounts.size()];for(int i=0;i<names.length;i++)names[i]=accounts.get(i).optString("name")+" · "+accounts.get(i).optString("type");return choice(layout,fieldLabel(label),names);
     }
     private void accountingScreen() {
-        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付可在租約明細登錄；電表照片已可使用；語音與Google尚未啟用。");
+        card("記帳與資金", "支出先選付款帳戶，再填各棟分攤金額。提款只轉移銀行與共用現金，不算費用。\n押金收付可在租約明細登錄；電表照片已可使用；語音可整理草稿；Google尚未啟用。");
         action("＋ 新增銀行／共用現金帳戶",this::accountForm);
         if(data("accounts").length()==0) {card("尚未設定帳戶","請依存摺建立各銀行帳戶、共用現金的起算日與期初餘額。未設定不顯示為零。");return;}
+        action("🎤 語音記帳／文字草稿",()->voiceEditor(""));
         action("＋ 記錄支出／房貸扣款",this::expenseForm);
         action("銀行提款／帳戶間轉帳",this::transferForm);
         action("查看帳戶流水與對帳",this::accountsDialog);
@@ -832,20 +836,57 @@ public class MainActivity extends Activity {
             }catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
     }
-    private void expenseForm() {
+    private static final int VOICE_INPUT=45;
+    private void addDraftAccountPlaceholder(List<JSONObject> accounts,JSONObject draft) {
+        if(draft==null)return;accounts.add(0,new JSONObject());try{accounts.get(0).put("id","").put("name","請選實際帳戶").put("type","待選");}catch(Exception e){throw new IllegalStateException(e);}
+    }
+    private JSONObject selectedDraftAccount(List<JSONObject> accounts,Spinner spinner) throws JSONException {JSONObject row=accounts.get(spinner.getSelectedItemPosition());if(row.getString("id").isEmpty())throw new IllegalArgumentException("請選擇實際帳戶");return row;}
+    private void selectDraftAccount(Spinner spinner,List<JSONObject> accounts,String id) {spinner.setSelection(0);if(!id.isEmpty())for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("id").equals(id))spinner.setSelection(i);}
+    private void setDraftAmount(EditText input,JSONObject draft){input.setText(draft.isNull("amount")?"":draft.optString("amount"));}
+    private void selectDraftChoice(Spinner spinner,String value) {for(int i=0;i<spinner.getCount();i++)if(value.equals(spinner.getItemAtPosition(i).toString()))spinner.setSelection(i);}
+    private void voiceEditor(String initial) {
+        LinearLayout layout=form();layout.addView(text("說完先核對文字，再整理帳務草稿。所有草稿都需確認後才會入帳；語音服務依手機提供，可能需要網路。",14,Color.DKGRAY));
+        EditText input=field(layout,"語音文字／可手動修改");input.setSingleLine(false);input.setMinLines(3);input.setText(initial.isEmpty()?getSharedPreferences("workflow",MODE_PRIVATE).getString("voiceText",""):initial);
+        layout.addView(text("例：今天A棟修繕總共三千元，從共用現金付款。\n例：今天收到R1401租金一萬元，匯入A帳戶。\n例：今天從A帳戶提款一萬元到共用現金。\n帳戶與棟名請用App裡的代稱；一次說一筆。",14,Color.DKGRAY));
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("語音記帳／文字草稿").setView(scroll).setNegativeButton("取消",null).setNeutralButton("🎤 開始說話",null).setPositiveButton("整理草稿",null).create();
+        dialog.setOnShowListener(v->{dialog.getButton(-3).setOnClickListener(w->{getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("voiceText",input.getText().toString()).commit();try{
+            Intent voice=new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE,"zh-TW").putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS,3).putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT,"一次說一筆：日期、類型、金額、棟別／房號與帳戶");startActivityForResult(voice,VOICE_INPUT);dialog.dismiss();
+        }catch(android.content.ActivityNotFoundException e){error(new IllegalArgumentException("手機未提供語音辨識，可使用鍵盤語音輸入或直接填文字"));}});
+            dialog.getButton(-1).setOnClickListener(w->{try{JSONObject draft=VoiceDrafts.parse(input.getText().toString(),today(),fullBackup());getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("voiceText",input.getText().toString()).commit();if(draft.getBoolean("blocked"))throw new IllegalArgumentException("押金／退款／退租請用專用入口；提款含手續費請拆成轉帳及支出兩筆。請修改文字後重試。");voiceDraftReview(draft,dialog);}catch(Exception e){error(e);}});});dialog.show();
+    }
+    private void voiceDraftReview(JSONObject draft,AlertDialog source) throws JSONException {
+        LinearLayout layout=form();layout.addView(text("辨識文字：\n"+draft.getString("raw"),16,Color.DKGRAY));Spinner kind=choice(layout,"這筆帳務類型",new String[]{"請選類型","支出／房貸扣款","收到租金","提款／轉帳"});kind.setSelection(draft.optString("kind").equals("支出")?1:draft.optString("kind").equals("收款")?2:draft.optString("kind").equals("轉帳")?3:0);
+        layout.addView(text("草稿日期："+(draft.optString("date").isEmpty()?"待補選":draft.optString("date"))+"\n總金額："+(draft.isNull("amount")?"待填":"$"+draft.optLong("amount"))+"\n分類："+(draft.optString("category").isEmpty()?"待選":draft.optString("category"))+"\n付款／收款帳戶："+(draft.optString("accountId").isEmpty()?"待選":accountName(draft.optString("accountId")))+"\n轉出："+(draft.optString("fromId").isEmpty()?"待選":accountName(draft.optString("fromId")))+"\n轉入："+(draft.optString("toId").isEmpty()?"待選":accountName(draft.optString("toId"))),15,Color.DKGRAY));
+        StringBuilder split=new StringBuilder("分攤草稿：\n");JSONArray ids=draft.getJSONArray("propertyIds"),splits=draft.getJSONArray("splits");for(int i=0;i<ids.length();i++)split.append(propertyName(ids.getString(i))).append("\n");for(int i=0;i<splits.length();i++)split.append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount")).append("\n");if(ids.length()==0)split.append("待選不動產／逐棟填寫\n");layout.addView(text(split.toString(),15,Color.DKGRAY));
+        List<JSONObject> leases=new ArrayList<>();String[] options;JSONArray all=data("leases");for(int i=0;i<all.length();i++)if(!all.getJSONObject(i).has("terminatedOn"))leases.add(all.getJSONObject(i));options=new String[leases.size()+1];options[0]="請選租約（收到租金才需要）";for(int i=0;i<leases.size();i++){JSONObject l=leases.get(i),unit=find("units",l.optString("unitId"));options[i+1]=(unit==null?"":propertyName(unit.optString("propertyId"))+" · ")+l.optString("unitCodeSnapshot")+" · "+l.optString("tenant")+" · "+l.optString("start");}
+        Spinner lease=choice(layout,"收租房號／租客",options);for(int i=0;i<leases.size();i++)if(leases.get(i).optString("id").equals(draft.optString("leaseId")))lease.setSelection(i+1);
+        StringBuilder warnings=new StringBuilder("需要核對：\n");JSONArray ws=draft.getJSONArray("warnings");for(int i=0;i<ws.length();i++)warnings.append("• ").append(ws.getString(i)).append("\n");warnings.append("下一頁仍可修改日期、金額、帳戶和分攤；不會直接入帳。");layout.addView(text(warnings.toString(),14,Color.rgb(137,83,15)));
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("檢查語音記帳草稿").setView(scroll).setNegativeButton("返回修改",null).setPositiveButton("帶入表單",null).create();dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{int selected=kind.getSelectedItemPosition();if(selected==0)throw new IllegalArgumentException("請選擇帳務類型");if(selected==2&&lease.getSelectedItemPosition()==0)throw new IllegalArgumentException("請選擇收租房號與租客");draft.put("kind",selected==1?"支出":selected==2?"收款":"轉帳");dialog.dismiss();source.dismiss();if(selected==1)expenseForm(draft);else if(selected==3)transferForm(draft);else receiptForm(leases.get(lease.getSelectedItemPosition()-1),draft);}catch(Exception e){error(e);}}));dialog.show();
+    }
+    private void voiceResult(int result,Intent intent) {
+        if(result!=RESULT_OK||intent==null){voiceEditor("");return;}ArrayList<String> results=intent.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);if(results==null||results.isEmpty()){Toast.makeText(this,"未辨識到文字，請重試或手動輸入",Toast.LENGTH_LONG).show();voiceEditor("");return;}
+        if(results.size()==1){voiceEditor(results.get(0));return;}
+        new AlertDialog.Builder(this).setTitle("選擇正確的語音文字").setItems(results.toArray(new String[0]),(d,n)->voiceEditor(results.get(n))).setNegativeButton("返回草稿",(d,n)->voiceEditor("")).show();
+    }
+
+    private void expenseForm() {expenseForm(null);}
+    private void expenseForm(JSONObject draft) {
         List<JSONObject> accounts=accountRows();JSONArray properties=data("properties");
         if(accounts.isEmpty()||properties.length()==0){error(new IllegalArgumentException("請先建立不動產與付款帳戶"));return;}
+        addDraftAccountPlaceholder(accounts,draft);
         LinearLayout layout=form();EditText date=dateField(layout,"實際付款日期",false);date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"付款來源");
-        Spinner category=choice(layout,Bookkeeping.CATEGORIES);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
+        String[] categories=Bookkeeping.CATEGORIES;if(draft!=null){categories=new String[Bookkeeping.CATEGORIES.length+1];categories[0]="請選支出分類";System.arraycopy(Bookkeeping.CATEGORIES,0,categories,1,Bookkeeping.CATEGORIES.length);}
+        Spinner category=choice(layout,categories);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
         layout.addView(text("各棟分攤金額：不分攤的留空。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++)fields.add(labeledNumber(layout,properties.optJSONObject(i).optString("name")));
+        if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));selectDraftChoice(category,draft.optString("category"));try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
         TextView sumLabel=text("分攤合計：待輸入",16,Color.rgb(90,61,37));layout.addView(sumLabel);
         TextWatcher watch=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){try{long sum=0;for(EditText f:fields){long n=amount(f,true);if(n>0)sum+=n;}long paid=amount(total,true);sumLabel.setText("分攤合計 $"+sum+(paid<0?"":" · 差額 $"+(paid-sum)));}catch(Exception e){sumLabel.setText("金額格式不正確");}}public void afterTextChanged(Editable e){}};
         total.addTextChangedListener(watch);for(EditText f:fields)f.addTextChangedListener(watch);
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("支出與分攤").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONArray splits=new JSONArray();for(int i=0;i<fields.size();i++){long n=amount(fields.get(i),true);if(n>0)splits.put(new JSONObject().put("propertyId",properties.getJSONObject(i).getString("id")).put("amount",n));}
-            JSONObject a=accounts.get(account.getSelectedItemPosition());JSONObject row=Bookkeeping.expense(date.getText().toString().trim(),a.getString("id"),category.getSelectedItem().toString(),description.getText().toString(),amount(total,false),splits);
+            JSONObject a=selectedDraftAccount(accounts,account);JSONObject row=Bookkeeping.expense(date.getText().toString().trim(),a.getString("id"),category.getSelectedItem().toString(),description.getText().toString(),amount(total,false),splits);
             StringBuilder preview=new StringBuilder(row.getString("date")+" · "+row.getString("category")+"\n"+row.getString("description")+"\n付款："+a.getString("name")+" $"+row.getLong("amount"));
             for(int i=0;i<splits.length();i++)preview.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));
             preview.append(LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(a.getString("start")))?"\n起算日前歷史：不再扣期初餘額。":"\n只扣付款帳戶一次，不因分攤重複扣款。");
@@ -856,13 +897,16 @@ public class MainActivity extends Activity {
             }catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
     }
-    private void transferForm() {
+    private void transferForm() {transferForm(null);}
+    private void transferForm(JSONObject draft) {
         List<JSONObject> accounts=accountRows();if(accounts.size()<2){error(new IllegalArgumentException("需先建立至少兩個帳戶，例如銀行與共用現金"));return;}
+        addDraftAccountPlaceholder(accounts,draft);
         LinearLayout layout=form();EditText date=dateField(layout,"轉帳／提款日期",false);date.setText(today().toString());Spinner from=accountChoice(layout,accounts,"轉出帳戶"),to=accountChoice(layout,accounts,"轉入帳戶");to.setSelection(1);
         EditText value=labeledNumber(layout,"轉帳金額"),note=labeledField(layout,"備註，例如A帳戶提領零用金");layout.addView(text("銀行提款時選銀行→共用現金；不增加收入或支出。提款手續費請另外記支出。",14,Color.DKGRAY));
+        if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(value,draft);note.setText(draft.optString("raw"));selectDraftAccount(from,accounts,draft.optString("fromId"));selectDraftAccount(to,accounts,draft.optString("toId"));}
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("資金轉移").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
-            JSONObject a=accounts.get(from.getSelectedItemPosition()),b=accounts.get(to.getSelectedItemPosition());JSONObject row=Bookkeeping.transfer(date.getText().toString().trim(),a.getString("id"),b.getString("id"),amount(value,false),note.getText().toString());
+            JSONObject a=selectedDraftAccount(accounts,from),b=selectedDraftAccount(accounts,to);JSONObject row=Bookkeeping.transfer(date.getText().toString().trim(),a.getString("id"),b.getString("id"),amount(value,false),note.getText().toString());
             boolean historyFrom=LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(a.getString("start"))),historyTo=LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(b.getString("start")));
             new AlertDialog.Builder(this).setMessage(display(String.valueOf(row.getString("date")+"\n"+a.getString("name")+" → "+b.getString("name")+"\n金額 $"+row.getLong("amount")+"\n這是資金移動，不是支出。"+(historyFrom||historyTo?"\n早於起算日的帳戶不再加減，請確認各帳戶期初日期。":"")))).setNegativeButton("修改",null).setPositiveButton("確認轉帳",(d,w2)->{try{
                 JSONArray rows=data("transfers");for(int i=0;i<rows.length();i++){JSONObject old=rows.getJSONObject(i);if(old.getString("id").equals(row.getString("id")))return;
@@ -1116,6 +1160,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent intent) {
         super.onActivityResult(request,result,intent);
+        if(request==VOICE_INPUT){voiceResult(result,intent);return;}
         if(request==CAMERA_PHOTO||request==PICK_PHOTO){photoResult(request,result,intent);return;}
         if(result!=RESULT_OK||intent==null||intent.getData()==null)return;
         if(request==EXPORT)exportArchive(intent.getData());else if(request==IMPORT)readArchive(intent.getData());
