@@ -1,6 +1,16 @@
 # APK 整合測試版
 
-版本 0.18.0-preview，versionCode=21，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.19.0-preview，versionCode=22，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.19 按鈕與到期提醒
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37193273995/artifacts/11299653795)。Release帳務與到期提醒單元測試、APK編譯、lint、Google同步契約測試已通過。手機實際排版及覆蓋更新仍待驗證。
+
+- 主要收款／開單：深暖棕實心按鈕。次要操作：圓角細框。分頁採圓角選取背景，返回按鈕同一套樣式。
+- 押金撤銷位於該筆紀錄內，只有持有餘額大於零才顯示退款。
+- 首頁「租約到期提醒」：已到期未退租與未來60天內到期的租約；點選開啟租客帳務，不會自動退租或發送通知。
+- 測試大字體、長姓名、各分頁按鈕、押金收退款及即時更新；到期當日與第60天列入、已退租排除。
+- 更新前先匯出完整備份。
 
 ## 0.18 租約帳務版
 
