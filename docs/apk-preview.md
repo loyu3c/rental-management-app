@@ -1,6 +1,17 @@
 # APK 整合測試版
 
-版本 0.20.0-preview，versionCode=23，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.21.0-preview，versionCode=24，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.21 收款紀錄查詢
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37196414695/artifacts/11300428730)。Release單元測試、APK編譯、lint及Google同步契約測試均已通過，實機操作與資料保留仍待驗證。
+
+- 收租 → 收款紀錄查詢：預設本月，可選全部月份、收款類型及搜尋租客、單位、帳戶、備註或金額。
+- 各自顯示租金水電實收、收到押金、退還押金、結算補繳；抵付與非現金結算收款排除，避免補繳重複計數。
+- 合計依全部符合條件的紀錄計算，列表每次載入20筆；交易淨流入不是租金收入或帳戶餘額。
+- 點紀錄開啟原租客帳務；保存收款或退款後，查詢會即時更新且保留條件。
+- 請核對本月與歷史月份、搜尋千位金額、押金退款與補繳，確認非現金抵付沒有列入。
+- 更新前先匯出完整備份，再解壓縮安裝app-release.apk。
 
 ## 0.20 統一介面與待辦
 
