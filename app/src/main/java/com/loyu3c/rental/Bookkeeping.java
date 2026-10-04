@@ -77,7 +77,12 @@ public final class Bookkeeping {
         }
         for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(!r.optString("accountId").isEmpty()&&!accountIds.contains(r.getString("accountId")))throw new IllegalArgumentException("收款帳戶不存在");}
         for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(r.getString("id").isEmpty()||!ids.add(r.getString("id"))||!accountIds.contains(r.getString("accountId")))throw new IllegalArgumentException("支出帳戶或ID無效");
-            r.getBoolean("void");expense(r.getString("date"),r.getString("accountId"),r.getString("category"),r.getString("description"),Ledger.money(r,"amount"),r.getJSONArray("splits"));
+            ExpenseEdits.validate(r);r.getBoolean("void");expense(r.getString("date"),r.getString("accountId"),r.getString("category"),r.getString("description"),Ledger.money(r,"amount"),r.getJSONArray("splits"));
+            JSONArray history=r.optJSONArray("history");if(history!=null)for(int hi=0;hi<history.length();hi++){
+                JSONObject old=history.getJSONObject(hi).getJSONObject("previous");if(!accountIds.contains(old.getString("accountId")))throw new IllegalArgumentException("修改紀錄的帳戶不存在");
+                if(backup.has("expenseCategories")){boolean found=false;JSONArray cats=backup.getJSONArray("expenseCategories");for(int ci=0;ci<cats.length();ci++)if(cats.getJSONObject(ci).getString("id").equals(old.getString("category")))found=true;if(!found)throw new IllegalArgumentException("修改紀錄的類別不存在");}
+                JSONArray oldSplits=old.getJSONArray("splits");for(int si=0;si<oldSplits.length();si++)if(!propertyIds.contains(oldSplits.getJSONObject(si).getString("propertyId")))throw new IllegalArgumentException("修改紀錄的不動產不存在");
+            }
             JSONArray s=r.getJSONArray("splits");for(int j=0;j<s.length();j++)if(!propertyIds.contains(s.getJSONObject(j).getString("propertyId")))throw new IllegalArgumentException("分攤不動產不存在");}
         ids.clear();for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.getString("id").isEmpty()||!ids.add(r.getString("id"))||!accountIds.contains(r.getString("fromId"))||!accountIds.contains(r.getString("toId")))throw new IllegalArgumentException("轉帳關聯無效");
             r.getBoolean("void");transfer(r.getString("date"),r.getString("fromId"),r.getString("toId"),Ledger.money(r,"amount"),r.getString("description"));}
