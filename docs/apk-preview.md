@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.11.1-preview，versionCode=14，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.12.0-preview，versionCode=15，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -109,3 +109,13 @@ Google未啟用；語音草稿已加入。本批相機／相簿／圖片檢視�
 0.11.1 CI：release 單元測試、編譯與 lint 已成功，Debug 檢查成功。手機流程尚待驗收。
 
 [下載 0.11.1 固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37176443009/artifacts/11293117482)。解壓縮後安裝 app-release.apk。
+
+## 0.12.0 記帳分類與圖示
+
+記帳上方保留記支出、語音記帳、提款／轉帳三快捷。帳戶管理、更多功能可展開收合；支出分攤報表使用底部報表入口。無帳戶仍可新增。
+
+底部五分頁使用不同向量圖示，收租使用錢幣。記帳近期支出／轉帳及支出報表的撤銷按鈕放在同一筆卡片右下角；已撤銷只顯示狀態，保留原因及確認流程。
+
+[0.12.0 下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37180275142/artifacts/11294833110)。先備份，再解壓安裝 app-release.apk，沿用固定簽署，versionCode15。
+
+CI release 單元測試、編譯、lint及 Debug Checks成功。實機外觀、大字模式、覆蓋更新資料保留仍待確認。示意圖中的月份搜尋不在本批實作。
