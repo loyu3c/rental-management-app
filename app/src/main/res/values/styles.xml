@@ -1,0 +1,46 @@
+<resources>
+    <style name="WarmAppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">#704D32</item>
+        <item name="android:colorControlHighlight">#23704D32</item>
+        <item name="android:colorControlActivated">#704D32</item>
+        <item name="android:colorButtonNormal">#FFFCF7</item>
+        <item name="android:colorBackground">#F8F4ED</item>
+        <item name="android:textColorPrimary">#533C28</item>
+        <item name="android:textColorSecondary">#736657</item>
+        <item name="android:statusBarColor">#F8F4ED</item>
+        <item name="android:navigationBarColor">#F8F4ED</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:alertDialogTheme">@style/WarmDialogTheme</item>
+        <item name="android:datePickerDialogTheme">@style/WarmDialogTheme</item>
+        <item name="android:buttonStyle">@style/WarmButton</item>
+    </style>
+    <style name="WarmDialogTheme" parent="android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#704D32</item>
+        <item name="android:colorControlActivated">#704D32</item>
+        <item name="android:colorControlHighlight">#23704D32</item>
+        <item name="android:colorBackgroundFloating">#FFFCF7</item>
+        <item name="android:textColorPrimary">#533C28</item>
+        <item name="android:textColorSecondary">#736657</item>
+        <item name="android:buttonStyle">@style/WarmButton</item>
+        <item name="android:buttonBarButtonStyle">@style/WarmDialogButton</item>
+    </style>
+    <style name="WarmButton" parent="android:style/Widget.Material.Button">
+        <item name="android:background">@drawable/warm_button</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#64432B</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingLeft">16dp</item>
+        <item name="android:paddingRight">16dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+    </style>
+    <style name="WarmDialogButton" parent="android:style/Widget.Material.Button.Borderless">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#704D32</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+</resources>

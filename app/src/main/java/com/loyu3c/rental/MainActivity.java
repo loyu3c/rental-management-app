@@ -66,7 +66,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(18), dp(12), dp(18), dp(12));
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.rgb(255, 252, 247)); background.setCornerRadius(dp(16)); box.setBackground(background);
+        background.setColor(Color.rgb(255, 252, 247)); background.setCornerRadius(dp(16));background.setStroke(dp(1),Color.rgb(237,227,214)); box.setBackground(background);
         TextView title = text(heading, 18, Color.rgb(77, 57, 39)); title.setTypeface(null, Typeface.BOLD);
         box.addView(title); box.addView(text(detail, 15, Color.rgb(115, 102, 87)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
@@ -98,6 +98,7 @@ public class MainActivity extends Activity {
                 YearMonth ym=YearMonth.from(today());card("本月已登錄支出", "$"+Bookkeeping.expenseTotal(data("expenses"),ym.atDay(1).toString(),ym.atEndOfMonth().toString(),null)+"（含房貸總扣款；不含提款轉帳）");
                 card("銀行與共用零用金",data("accounts").length()+" 個已設定帳戶；未對應的舊收款 "+unlinkedReceipts()+" 筆。\n請到記帳查看各帳戶餘額、流水與對帳。押金另行追蹤，不是可用租金收入。");
             }catch(Exception e){card("資金資料異常","請先匯出備份，暫停記帳。");}
+            primaryAction("待辦總覽",this::taskOverview);
             action("租約到期提醒",this::leaseAlerts);
             card("不動產建檔", "已建立 " + data("properties").length() + " 筆不動產、" + data("units").length() + " 個出租單位。\n請從不動產入口新增。");
         } else if (selected == 1) {
@@ -107,16 +108,11 @@ public class MainActivity extends Activity {
         } else if (selected == 3) {
             propertyScreen();
         } else {
-            action("爸爸的每月總報表／CSV匯出",this::ownerReport);
-            card("租客雲端報表：尚未啟用", "Google連線與每位租客的獨立查看權限仍待設定。");
-            action("本地支出與各棟分攤報表",this::expenseReport);
-            action("押金總覽",this::depositOverview);
-            action("退租結算與待收／待退",this::settlementOverview);
-            action("帳戶流水與存摺對帳",this::accountsDialog);
-            card("歷史補登", "起算日前歷史交易列入報表，不重複改變期初餘額。\n帳務未齊，餘額需核對；押金另行追蹤，不是可用租金收入。");
-            action("匯出完整備份", this::exportBackup);
-            action("從檔案還原資料", this::importBackup);
-            action("Google同步設定／狀態",this::googleSyncSettings);
+            primaryAction("房東月報／匯出 Excel",this::ownerReport);
+            actionGroup("帳務報表",new String[]{"支出與各棟分攤","押金總覽","退租結算與待收／待退","帳戶流水與存摺對帳"},new Runnable[]{this::expenseReport,this::depositOverview,this::settlementOverview,this::accountsDialog});
+            actionGroup("資料備份與同步",new String[]{"匯出完整備份","從檔案還原資料","Google同步設定／狀態"},new Runnable[]{this::exportBackup,this::importBackup,this::googleSyncSettings});
+            action("待辦總覽",this::taskOverview);
+            card("報表說明","App 是帳務來源；Google 設定完成後可手動同步房東月報。租客雲端查看仍未啟用。歷史補登與押金請依實際收付核對。");
         }
         LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
         for (int i = 0; i < tabs.length; i++) {
@@ -125,7 +121,7 @@ public class MainActivity extends Activity {
             LinearLayout button=new LinearLayout(this);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setPadding(dp(2),dp(8),dp(2),dp(8));button.setMinimumHeight(dp(64));
             ImageView icon=new ImageView(this);icon.setImageResource(icons[i]);icon.setColorFilter(i==selected?Color.rgb(104,70,39):Color.rgb(115,112,106));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);button.addView(icon,new LinearLayout.LayoutParams(dp(22),dp(22)));
             TextView label=text(tabs[i],12,i==selected?Color.rgb(104,70,39):Color.DKGRAY);label.setGravity(Gravity.CENTER);label.setPadding(0,dp(4),0,0);label.setIncludeFontPadding(false);button.addView(label,new LinearLayout.LayoutParams(-1,-2));
-            GradientDrawable navBg=new GradientDrawable();navBg.setColor(i==selected?Color.rgb(232,213,187):Color.rgb(248,244,237));navBg.setCornerRadius(dp(12));button.setBackground(navBg);button.setClickable(true);button.setFocusable(true);button.setContentDescription(tabs[i]);button.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);label.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            GradientDrawable navBg=new GradientDrawable();navBg.setColor(i==selected?Color.rgb(232,213,187):Color.rgb(248,244,237));navBg.setCornerRadius(dp(12));button.setBackground(surface(i==selected?Color.rgb(232,213,187):Color.rgb(248,244,237),12));button.setClickable(true);button.setFocusable(true);button.setContentDescription(tabs[i]);button.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);label.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             button.setOnClickListener(v -> { selected = index; render(); });
             nav.addView(button,new LinearLayout.LayoutParams(0,-2,1));
         }
@@ -167,15 +163,15 @@ public class MainActivity extends Activity {
         LinearLayout button=new LinearLayout(this);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setPadding(dp(4),dp(12),dp(4),dp(12));button.setMinimumHeight(dp(92));
         ImageView icon=new ImageView(this);icon.setImageResource(iconId);icon.setColorFilter(Color.rgb(104,70,39));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);button.addView(icon,new LinearLayout.LayoutParams(dp(26),dp(26)));
         TextView caption=text(label,13,Color.rgb(90,61,37));caption.setGravity(Gravity.CENTER);caption.setIncludeFontPadding(false);caption.setPadding(0,dp(8),0,0);button.addView(caption,new LinearLayout.LayoutParams(-1,-2));
-        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(238,226,211));bg.setCornerRadius(dp(12));button.setBackground(bg);button.setClickable(true);button.setFocusable(true);button.setContentDescription(label);button.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);caption.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);button.setOnClickListener(v->run.run());
+        GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(238,226,211));bg.setCornerRadius(dp(12));button.setBackground(surface(Color.rgb(238,226,211),14));button.setClickable(true);button.setFocusable(true);button.setContentDescription(label);button.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);caption.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);button.setOnClickListener(v->run.run());
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-1,1);params.setMargins(dp(3),dp(6),dp(3),dp(6));row.addView(button,params);
     }
     private void actionGroup(String title,String[] labels,Runnable[] runs) {
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(255,252,247));bg.setCornerRadius(dp(12));box.setBackground(bg);
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(5),0,dp(5));body.addView(box,params);
-        Button toggle=new Button(this);toggle.setAllCaps(false);toggle.setText(title+"  ▾");toggle.setTextColor(Color.rgb(90,61,37));toggle.setBackgroundColor(Color.TRANSPARENT);toggle.setMinHeight(dp(52));box.addView(toggle);
+        Button toggle=styledButton(title+"  ▾",false,false);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout items=new LinearLayout(this);items.setOrientation(LinearLayout.VERTICAL);items.setVisibility(android.view.View.GONE);box.addView(items);
-        for(int i=0;i<labels.length;i++){final Runnable run=runs[i];Button item=new Button(this);item.setAllCaps(false);item.setText(labels[i]);item.setTextSize(14);item.setTextColor(Color.rgb(90,61,37));item.setBackgroundColor(Color.TRANSPARENT);item.setMinHeight(dp(48));item.setOnClickListener(v->run.run());items.addView(item,new LinearLayout.LayoutParams(-1,-2));}
+        for(int i=0;i<labels.length;i++){final Runnable run=runs[i];Button item=styledButton(labels[i]+"  ›",false,false);item.setTextSize(14);item.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);item.setOnClickListener(v->run.run());LinearLayout.LayoutParams itemParams=new LinearLayout.LayoutParams(-1,-2);itemParams.setMargins(dp(8),dp(4),dp(8),dp(4));items.addView(item,itemParams);}
         toggle.setOnClickListener(v->{boolean open=items.getVisibility()!=android.view.View.VISIBLE;items.setVisibility(open?android.view.View.VISIBLE:android.view.View.GONE);toggle.setText(title+(open?"  ▴":"  ▾"));toggle.setContentDescription(title+(open?"，已展開":"，已收合"));});toggle.setContentDescription(title+"，已收合");
     }
     private void cardAction(LinearLayout box,String label,Runnable run) {
@@ -261,7 +257,11 @@ public class MainActivity extends Activity {
     }
     private void openUnit(JSONObject unit) { selected=3;propertyId=unit.optString("propertyId");unitId=unit.optString("id");render(); }
     private void tapCard(String title,String detail,Runnable run) {
-        LinearLayout row=card(title+"  ›",detail);row.setOnClickListener(v->run.run());row.setContentDescription(title+"，點擊查看");
+        LinearLayout row=card(title+"  ›",detail);row.setBackground(surface(Color.rgb(255,252,247),16));row.setMinimumHeight(dp(64));row.setClickable(true);row.setFocusable(true);row.setOnClickListener(v->run.run());row.setContentDescription(title+"，點擊查看");
+    }
+    private android.graphics.drawable.Drawable surface(int color,int radius) {
+        GradientDrawable shape=new GradientDrawable();shape.setColor(color);shape.setCornerRadius(dp(radius));shape.setStroke(dp(1),Color.rgb(228,216,200));
+        return new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.argb(30,112,77,50)),shape,null);
     }
     private int natural(String a,String b) {
         int i=0,j=0;
@@ -303,7 +303,7 @@ public class MainActivity extends Activity {
     private String tenantLabel(JSONObject unit) {String tenant=currentTenant(unit);return tenant.isEmpty()?"目前無租客":"目前租客："+tenant;}
     private void propertyScreen() {
         JSONObject property=find("properties",propertyId),unit=find("units",unitId);
-        if(property==null) {propertyId="";unitId="";action("＋ 新增不動產",this::addProperty);
+        if(property==null) {propertyId="";unitId="";primaryAction("＋ 新增不動產",this::addProperty);
             JSONArray properties=data("properties"),units=data("units");
             if(properties.length()==0)card("尚未建檔","先新增建築物或土地，再建立房間、車格或土地出租範圍。");
             for(int i=0;i<properties.length();i++) {JSONObject p=properties.optJSONObject(i);int count=0;for(int j=0;j<units.length();j++)if(p.optString("id").equals(units.optJSONObject(j).optString("propertyId")))count++;
@@ -314,7 +314,7 @@ public class MainActivity extends Activity {
         if(unit!=null&&unit.optString("propertyId").equals(propertyId)) { unitScreen(property,unit);return; }
         unitId="";card(property.optString("name"),property.optString("type"));
         action("修改不動產名稱",()->editName("properties",property,"name","不動產名稱"));
-        action("＋ 新增出租單位",()->addUnit(propertyId,property.optString("name")));
+        primaryAction("＋ 新增出租單位",()->addUnit(propertyId,property.optString("name")));
         EditText search=field(body,"搜尋代號或租客姓名");
         Spinner filter=choice(body,new String[]{"全部","出租中","待起租","租約已到期","未建租約"});
         Spinner sort=choice(body,new String[]{"代號由小到大","代號由大到小"});
@@ -565,6 +565,26 @@ public class MainActivity extends Activity {
         };
         search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){rentSearch=s.toString();refresh.run();}public void afterTextChanged(Editable e){}});
         filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){rentFilter=n;refresh.run();}public void onNothingSelected(AdapterView<?> p){}});refresh.run();
+    }
+    private void taskOverview() {
+        LinearLayout layout=form();String[] selectedKind={"全部"};
+        String[] kinds={"全部","逾期待收","未完成開單","待抄電表","結算待收","押金待退"};
+        Spinner filter=choice(layout,"待辦類型",kinds);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list,new LinearLayout.LayoutParams(-1,-2));
+        Runnable refresh=()->{
+            list.removeAllViews();LinearLayout previous=body;body=list;
+            try {JSONArray tasks=TaskOverview.build(fullBackup(),today());int count=0;
+                card("待辦事項 "+tasks.length()+" 項",YearMonth.from(today())+" 本月追蹤；同一租約可有多項待辦。逾期僅包含應繳日已過的帳單。點選即可處理，不會自動開單、收款或退款。");
+                for(String kind:kinds){if(kind.equals("全部")||!selectedKind[0].equals("全部")&&!selectedKind[0].equals(kind))continue;boolean heading=false;
+                    for(int i=0;i<tasks.length();i++){JSONObject task=tasks.getJSONObject(i);if(!kind.equals(task.getString("kind")))continue;
+                        if(!heading){TextView section=text(kind,18,Color.rgb(100,67,43));section.setTypeface(null,Typeface.BOLD);body.addView(section);heading=true;}
+                        tapCard(task.getString("title"),task.getString("detail"),()->{JSONObject lease=find("leases",task.optString("leaseId"));if(lease==null)return;if(kind.equals("待抄電表"))meterPanel(lease);else if(kind.equals("未完成開單"))billingForm(lease);else leaseLedger(lease);});count++;
+                    }
+                }
+                if(count==0)card("目前沒有符合的待辦","未開帳單不代表已繳清；尚未補登的歷史資料仍需人工核對。");
+            }catch(Exception e){error(e);}finally{body=previous;}
+        };
+        filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int n,long id){selectedKind[0]=kinds[n];refresh.run();}});
+        refresh.run();showPanel("待辦總覽",layout,refresh);
     }
     private void leaseAlerts() {
         LinearLayout layout=form();Runnable refresh=()->{
@@ -891,7 +911,7 @@ public class MainActivity extends Activity {
     private void accountingScreen() {
         if(data("accounts").length()==0) {
             card("尚未設定帳戶","請依存摺建立各銀行帳戶、共用現金的起算日與期初餘額。未設定不顯示為零。");
-            action("＋ 新增銀行／共用現金帳戶",this::accountForm);return;
+            primaryAction("＋ 新增銀行／共用現金帳戶",this::accountForm);return;
         }
         LinearLayout shortcuts=new LinearLayout(this);body.addView(shortcuts,new LinearLayout.LayoutParams(-1,-2));
         shortcut(shortcuts,"記支出",R.drawable.nav_ledger,this::expenseForm);
@@ -901,7 +921,7 @@ public class MainActivity extends Activity {
         actionGroup("更多功能",new String[]{"押金總覽／收付","退租結算與待收／待退"},new Runnable[]{this::depositOverview,this::settlementOverview});
         TextView recent=text("近期紀錄",20,Color.rgb(77,57,39));recent.setTypeface(null,Typeface.BOLD);body.addView(recent);
         LinearLayout page=body,filters=new LinearLayout(this);filters.setOrientation(LinearLayout.VERTICAL);filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);
-        action("搜尋與篩選  ▾",()->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);});page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
+        Button filterToggle=styledButton("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"),false,false);filterToggle.setOnClickListener(v->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?View.VISIBLE:View.GONE);filterToggle.setText("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"));filterToggle.setContentDescription(expenseFiltersOpen?"搜尋與篩選，已展開":"搜尋與篩選，已收合");});page.addView(filterToggle,new LinearLayout.LayoutParams(-1,-2));page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
         EditText search=field(body,"搜尋項目、帳戶或不動產");search.setText(expenseSearch);
         Spinner type=choice(body,"紀錄類型",new String[]{"全部紀錄","有效支出","有效轉帳","已撤銷"});type.setSelection(expenseFilter);
         Spinner scope=choice(body,"月份範圍",new String[]{"全部月份","指定月份"});scope.setSelection(expenseMonth.isEmpty()?0:1);
@@ -1046,10 +1066,13 @@ public class MainActivity extends Activity {
     private int unlinkedReceipts() {JSONArray rows=data("receipts");int n=0;for(int i=0;i<rows.length();i++)if(rows.optJSONObject(i).optBoolean("cash",true)&&rows.optJSONObject(i).optString("accountId").isEmpty())n++;return n;}
     private void showPanel(String title,LinearLayout layout) {showPanel(title,layout,null);}
     private void showPanel(String title,LinearLayout layout,Runnable refresh) {
-        ScrollView scroll=new ScrollView(this);scroll.addView(layout);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(title).setView(scroll).setPositiveButton("關閉",null).create();
+        LinearLayout page=form();page.setPadding(dp(16),dp(12),dp(16),dp(12));page.setBackgroundColor(Color.rgb(248,244,237));
+        TextView heading=text(title,21,Color.rgb(83,60,40));heading.setTypeface(null,Typeface.BOLD);page.addView(heading);
+        ScrollView scroll=new ScrollView(this);layout.setPadding(0,dp(8),0,dp(12));scroll.addView(layout);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();Button close=styledButton("關閉",false,false);close.setOnClickListener(v->dialog.dismiss());page.addView(close,new LinearLayout.LayoutParams(-1,-2));
         if(refresh!=null)livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();scroll.post(()->scroll.scrollTo(0,y));});
         dialog.setOnDismissListener(d->livePanels.remove(dialog));dialog.show();
+        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
     }
     private void accountsDialog() {
         LinearLayout layout=form();Runnable refresh=()->drawAccounts(layout);refresh.run();showPanel("資金帳戶",layout,refresh);
@@ -1066,7 +1089,7 @@ public class MainActivity extends Activity {
     }
     private void accountStatement(JSONObject account) {
         LinearLayout layout=form();EditText date=dateField(layout,"查看／對帳日期（當日結束餘額）",false);date.setText(today().toString());
-        Button edit=new Button(this);edit.setText("修正期初設定（填錯時使用）");edit.setOnClickListener(v->editOpening(find("accounts",account.optString("id"))));layout.addView(edit);
+        Button edit=styledButton("修正期初設定（填錯時使用）",false,false);edit.setOnClickListener(v->editOpening(find("accounts",account.optString("id"))));layout.addView(edit);
         TextView summary=text("",16,Color.rgb(90,61,37));layout.addView(summary);
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
         Runnable refresh=()->{
