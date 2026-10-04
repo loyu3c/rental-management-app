@@ -1057,20 +1057,27 @@ public class MainActivity extends Activity {
             }catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
     }
-    private static final int EXPORT_REPORT=46;
+    private static final int EXPORT_REPORT=46,EXPORT_WORKBOOK=47;
     private void ownerReport() {
         LinearLayout layout=form();EditText month=dateField(layout,"報表月份",true);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
         Runnable refresh=()->{LinearLayout previous=body;body=list;list.removeAllViews();try {
             JSONObject report=OwnerReport.build(fullBackup(),YearMonth.parse(dateValue(month)));JSONObject total=report.getJSONObject("total");
             card("每月總覽",ownerSummary(total));
             card("報表口徑","帳單應收按帳單月份；抵付狀態截至月底，包含押金抵付。實收按收到日期，租金與水電合併。押金不列收入，提款轉帳不列支出。未建帳單不代表已繳清；此淨收款不是銀行餘額或會計損益。");
-            action("匯出此月份CSV（可匯入Google試算表）",()->exportOwnerReport(report));
+            action("匯出Excel報表（千位逗點／分工作表）",()->exportOwnerWorkbook(report));
+            action("匯出此月份CSV（原始資料）",()->exportOwnerReport(report));
             JSONArray properties=report.getJSONArray("properties");for(int i=0;i<properties.length();i++){JSONObject row=properties.getJSONObject(i);card(row.getString("name"),ownerSummary(row));}
             JSONArray tenants=report.getJSONArray("tenants");for(int i=0;i<tenants.length();i++){JSONObject row=tenants.getJSONObject(i);card(propertyName(row.getString("propertyId"))+" · "+row.getString("code")+" · "+row.getString("name"),row.getString("status")+"\n本月已建帳單 $"+row.getLong("billed")+" · 月底已抵付 $"+row.getLong("paid")+"\n本月帳單未付 $"+row.getLong("remaining")+"\n本月租金水電實收 $"+row.getLong("cash")+" · 結算補繳 $"+row.getLong("topups")+"\n月底持有押金 $"+row.getLong("held"));}
         }catch(Exception e){card("報表無法產生","請檢查帳務資料："+e.getMessage());}finally{body=previous;}};
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("爸爸的每月總報表",layout,refresh);
     }
     private String ownerSummary(JSONObject row)throws JSONException{return "本月已建帳單 $"+row.getLong("billed")+" · "+row.getInt("invoiceCount")+" 筆\n截至月底已抵付 $"+row.getLong("paid")+" · 本月帳單未付 $"+row.getLong("remaining")+"\n本月租金水電實收 $"+row.getLong("cash")+"\n本月結算補繳實收 $"+row.getLong("topups")+"\n本月分攤支出 $"+row.getLong("expenses")+"\n本月淨收款 $"+row.getLong("net")+"（不含押金及轉帳）\n月底持有押金 $"+row.getLong("held");}
+    private void exportOwnerWorkbook(JSONObject report) {
+        try {if(!getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingWorkbook",report.toString()).commit())throw new IOException("報表快照保存失敗");Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").putExtra(Intent.EXTRA_TITLE,"rental-owner-"+report.getString("month")+".xlsx");startActivityForResult(intent,EXPORT_WORKBOOK);}catch(Exception e){error(e);}
+    }
+    private void writeOwnerWorkbook(Uri uri) {
+        String snapshot=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingWorkbook",null);if(snapshot==null){error(new IllegalArgumentException("報表快照遺失，請重新匯出"));return;}AlertDialog progress=busy("正在匯出Excel報表…");new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException("無法開啟檔案");OwnerWorkbook.write(out,new JSONObject(snapshot));runOnUiThread(()->{progress.dismiss();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingWorkbook").commit();Toast.makeText(this,"Excel報表已匯出，金額含千位逗點格式",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("Excel匯出失敗，請刪除未完成檔案並重試："+e.getMessage()));});}}).start();
+    }
     private void exportOwnerReport(JSONObject report) {
         try {String csv=OwnerReport.csv(report);if(!getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingReport",csv).commit())throw new IOException("報表快照保存失敗");Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/csv").putExtra(Intent.EXTRA_TITLE,"rental-owner-"+report.getString("month")+".csv");startActivityForResult(intent,EXPORT_REPORT);}catch(Exception e){error(e);}
     }
@@ -1240,6 +1247,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent intent) {
         super.onActivityResult(request,result,intent);
+        if(request==EXPORT_WORKBOOK){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerWorkbook(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingWorkbook").commit();return;}
         if(request==EXPORT_REPORT){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerReport(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingReport").commit();return;}
         if(request==VOICE_INPUT){voiceResult(result,intent);return;}
         if(request==CAMERA_PHOTO||request==PICK_PHOTO){photoResult(request,result,intent);return;}
