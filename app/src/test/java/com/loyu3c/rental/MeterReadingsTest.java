@@ -16,5 +16,8 @@ public class MeterReadingsTest {
     @Test public void missingLeaseOrDifferentUnitRejectedOnRestore() throws Exception {
         JSONObject b=new JSONObject().put("leases",new JSONArray().put(lease("L"))).put("meterReadings",new JSONArray().put(row("L",200)));MeterReadings.validate(b);b.getJSONArray("meterReadings").getJSONObject(0).put("unitId","OTHER");try{MeterReadings.validate(b);fail();}catch(IllegalArgumentException expected){}
     }
+    @Test public void invoiceEvidenceRemainsLinkedAfterVoidingButRejectsDifferentReads() throws Exception {
+        JSONObject reading=row("L",200),bill=new JSONObject().put("kind","水電").put("leaseId","L").put("month","2026-10").put("previous",100).put("current",200).put("meterReadingId",reading.getString("id"));JSONObject b=new JSONObject().put("leases",new JSONArray().put(lease("L"))).put("meterReadings",new JSONArray().put(reading)).put("invoices",new JSONArray().put(bill));MeterReadings.validate(b);reading.put("void",true);MeterReadings.validate(b);bill.put("current",201);try{MeterReadings.validate(b);fail();}catch(IllegalArgumentException expected){}
+    }
     @Test public void unsafeFileNameRejected() throws Exception {assertFalse(MeterReadings.photoName("../photo.jpg"));assertFalse(MeterReadings.photoName("photo.jpg"));assertTrue(MeterReadings.photoName("12345678-1234-1234-1234-123456789abc.jpg"));}
 }

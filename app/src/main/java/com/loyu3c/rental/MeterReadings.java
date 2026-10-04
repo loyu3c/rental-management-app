@@ -23,5 +23,6 @@ public final class MeterReadings {
             if(lease==null||r.getString("id").isEmpty()||!ids.add(r.getString("id"))||!r.getString("unitId").equals(lease.getString("unitId")))throw new IllegalArgumentException("抄表租約或單位錯誤");
             r.getBoolean("void");reading(lease,r.getString("month"),r.getString("date"),Ledger.money(r,"previous"),Ledger.money(r,"current"),r.getString("file"),r.getString("note"));if(!r.getString("file").isEmpty()&&!files.add(r.getString("file")))throw new IllegalArgumentException("照片參照重複");
         }
+        JSONArray invoices=backup.optJSONArray("invoices");if(invoices!=null)for(int i=0;i<invoices.length();i++){JSONObject bill=invoices.getJSONObject(i);if(!bill.has("meterReadingId"))continue;JSONObject reading=null;for(int j=0;j<rows.length();j++)if(bill.getString("meterReadingId").equals(rows.getJSONObject(j).getString("id")))reading=rows.getJSONObject(j);if(reading==null||!bill.getString("kind").equals("水電")||!bill.getString("leaseId").equals(reading.getString("leaseId"))||!bill.getString("month").equals(reading.getString("month"))||bill.getLong("previous")!=reading.getLong("previous")||bill.getLong("current")!=reading.getLong("current"))throw new IllegalArgumentException("帳單與抄表依據不一致");}
     }
 }

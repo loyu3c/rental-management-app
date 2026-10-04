@@ -530,6 +530,7 @@ public class MainActivity extends Activity {
                 }
                 String utility=hasUtility?"水費 $"+water+"／電費 $"+electric:lease.optString("utilities").equals("管理者代收水電")?"水電尚未建立":"水電自行繳納";
                 card(entry.getKey()+" · 當月帳單",(hasRent?"租金 $"+rent:"租金尚未建立")+"\n"+utility+detail+"\n已建立合計 $"+total+" · 已付 $"+paid+"\n尚需繳付 $"+(total-paid));
+                for(JSONObject bill:entry.getValue())if(bill.has("meterReadingId")){JSONObject meter=find("meterReadings",bill.optString("meterReadingId"));if(meter!=null&&!meter.optString("file").isEmpty())action("查看此帳單的電表照片",()->viewMeterPhoto(meter.optString("file")));}
                 final String billMonth=entry.getKey();action("複製 "+billMonth+" 繳費明細",()->copyBill(lease,billMonth));
                 for(JSONObject r:entry.getValue())if(!lease.has("terminatedOn")&&Ledger.paid(r.getString("id"),receipts)==0)action("撤銷 "+r.optString("month")+" 的"+r.optString("kind")+"項目",()->deleteInvoice(r));
             }
@@ -591,6 +592,7 @@ public class MainActivity extends Activity {
             boolean needUtility=lease.optString("utilities").equals("管理者代收水電")&&existingUtility==null;
             JSONObject plan=Ledger.monthlyPlan(lease,ym,existingRent==null?amount(rent,false):0,needUtility?amount(water,true):0,needUtility?amount(prior,false):0,needUtility?amount(current,false):0,before,data("receipts"));
             JSONArray added=plan.getJSONArray("added");JSONObject r=plan.getJSONObject("rent"),u=plan.optJSONObject("utility");
+            JSONObject meter=MeterReadings.latest(data("meterReadings"),lease.optString("id"),ym.toString());if(needUtility&&u!=null&&meter!=null&&meter.getLong("previous")==u.getLong("previous")&&meter.getLong("current")==u.getLong("current"))u.put("meterReadingId",meter.getString("id"));
             String preview=ym+"\n租金 $"+r.getLong("rent")+(u==null?"\n水電自行繳納":"\n水費 $"+u.getLong("water")+"\n電費 $"+u.getLong("electricity"))
                 +"\n合計 $"+plan.getLong("total")+"\n已付 $"+plan.getLong("paid")+" · 尚需繳付 $"+plan.getLong("remaining")+"\n"+(added.length()==0?"此月份已完整建立，無需重複開單。":"只新增尚未建立的項目，不新增收款紀錄。");
             AlertDialog.Builder confirm=new AlertDialog.Builder(this).setMessage(display(String.valueOf(preview))).setNegativeButton("返回",null);

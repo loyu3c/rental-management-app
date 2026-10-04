@@ -11,8 +11,8 @@ public final class BackupArchive {
         byte[] buffer=new byte[8192];long total=0;int n;while((n=in.read(buffer))!=-1){total+=n;if(total>limit)throw new IOException("備份或照片超出大小限制");out.write(buffer,0,n);}return total;
     }
     public static void write(OutputStream output,JSONObject backup,File photos) throws Exception {
-        Set<String> files=MeterReadings.files(backup.getJSONArray("meterReadings"));long size=0;for(String name:files){File f=new File(photos,name);if(!f.isFile()||f.length()==0||f.length()>PHOTO_LIMIT)throw new IOException("照片缺少或過大："+name);size+=f.length();}if(size>TOTAL_LIMIT)throw new IOException("照片總量超出本版備份上限");
-        try(ZipOutputStream zip=new ZipOutputStream(output)){zip.putNextEntry(new ZipEntry("catalog.json"));zip.write(backup.toString(2).getBytes(StandardCharsets.UTF_8));zip.closeEntry();for(String name:files){zip.putNextEntry(new ZipEntry("photos/"+name));try(InputStream in=new FileInputStream(new File(photos,name))){copy(in,zip,PHOTO_LIMIT);}zip.closeEntry();}}
+        byte[] json=backup.toString(2).getBytes(StandardCharsets.UTF_8);if(json.length>10000000)throw new IOException("帳務備份過大");Set<String> files=MeterReadings.files(backup.getJSONArray("meterReadings"));if(files.size()>2999)throw new IOException("照片數量超出本版上限");long size=json.length;for(String name:files){File f=new File(photos,name);if(!f.isFile()||f.length()==0||f.length()>PHOTO_LIMIT)throw new IOException("照片缺少或過大："+name);size+=f.length();}if(size>TOTAL_LIMIT)throw new IOException("照片總量超出本版備份上限");
+        try(ZipOutputStream zip=new ZipOutputStream(output)){zip.putNextEntry(new ZipEntry("catalog.json"));zip.write(json);zip.closeEntry();for(String name:files){zip.putNextEntry(new ZipEntry("photos/"+name));try(InputStream in=new FileInputStream(new File(photos,name))){copy(in,zip,PHOTO_LIMIT);}zip.closeEntry();}}
     }
     /** Extracts to an isolated cache directory only. Caller validates before replacing live data. */
     public static JSONObject read(InputStream input,File staging) throws Exception {
