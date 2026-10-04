@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.13.0-preview，versionCode=16，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.14.0-preview，versionCode=17，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -129,3 +129,11 @@ CI release 單元測試、編譯、lint及 Debug Checks成功。實機外觀、�
 [下載0.13.0固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37181354140/artifacts/11295695251)。先完整備份，解壓安裝 app-release.apk。固定簽署及applicationId沿用，versionCode16。
 
 Release單元測試、编譯、lint和Debug Checks成功。手機外觀、放大字體、組合搜尋、載入更多及覆蓋更新資料保留仍待實機驗證。
+
+## 0.14.0 快捷置中及查詢金額摘要
+
+三快捷使用獨立图示與文字整組置中，上下內外距一致，手機一般／放大字體需確認。記帳查詢結果統計所有符合條件的有效支出及轉帳，不受15筆載入限制，撤銷不列入。搜尋棟名所得是符合條件的整筆付款，不是該棟分攤；各棟總額使用支出分攤報表。
+
+[下載0.14.0固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37183854743/artifacts/11296341427)。先匯出備份再解壓安裝app-release.apk，固定簽署及applicationId沿用，versionCode17。
+
+CI單元測試、release編譯及lint成功；新增摘要測試確認轉帳與撤銷不增加支出、超過15筆及long合計。手機操作和外觀仍待驗證。
