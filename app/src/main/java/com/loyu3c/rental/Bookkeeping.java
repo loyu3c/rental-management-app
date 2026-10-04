@@ -16,7 +16,7 @@ public final class Bookkeeping {
         return new JSONObject().put("id",UUID.randomUUID().toString()).put("name",name.trim()).put("type",type).put("start",start).put("opening",opening).put("propertyId",propertyId);
     }
     public static JSONObject expense(String date,String accountId,String category,String description,long amount,JSONArray splits) throws JSONException {
-        LocalDate.parse(date);if(accountId.isEmpty()||description.trim().isEmpty()||!Arrays.asList(CATEGORIES).contains(category)||amount<=0||amount>1000000000L)throw new IllegalArgumentException("請填付款帳戶、項目與正確金額");
+        LocalDate.parse(date);if(accountId.isEmpty()||description.trim().isEmpty()||category.trim().isEmpty()||category.length()>100||amount<=0||amount>1000000000L)throw new IllegalArgumentException("請填付款帳戶、項目與正確金額");
         long sum=0;Set<String> unique=new HashSet<>();
         for(int i=0;i<splits.length();i++) {JSONObject r=splits.getJSONObject(i);long n=Ledger.money(r,"amount");
             if(n<=0||r.getString("propertyId").isEmpty()||!unique.add(r.getString("propertyId")))throw new IllegalArgumentException("分攤必須是正金額且不動產不能重複");sum=Math.addExact(sum,n);}
@@ -54,6 +54,7 @@ public final class Bookkeeping {
     }
     public static void validate(JSONObject backup) throws JSONException {
         JSONArray accounts=backup.getJSONArray("accounts"),expenses=backup.getJSONArray("expenses"),transfers=backup.getJSONArray("transfers"),receipts=backup.getJSONArray("receipts"),reconciliations=backup.getJSONArray("reconciliations");
+        if(backup.has("expenseCategories"))ExpenseCategories.validate(backup.getJSONArray("expenseCategories"),expenses);
         Set<String> accountIds=new HashSet<>(),names=new HashSet<>(),propertyIds=new HashSet<>(),ids=new HashSet<>();int cash=0;
         JSONArray properties=backup.getJSONArray("properties");for(int i=0;i<properties.length();i++)propertyIds.add(properties.getJSONObject(i).getString("id"));
         for(int i=0;i<accounts.length();i++){JSONObject r=accounts.getJSONObject(i);String type=r.getString("type");

@@ -36,7 +36,7 @@ public class MainActivity extends Activity {
     private boolean googleSyncRunning=false;
     private String pendingBackup;
     private String propertyId="", unitId="";
-    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings"};
+    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings","expenseCategories"};
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Taipei")); }
     private static final int EXPORT = 41, IMPORT = 42;
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
@@ -129,7 +129,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONArray data(String key) {
-        try { return new JSONArray(getSharedPreferences("catalog", MODE_PRIVATE).getString(key, "[]")); }
+        try { if(key.equals("expenseCategories")&&!getSharedPreferences("catalog",MODE_PRIVATE).contains(key))return ExpenseCategories.defaults();return new JSONArray(getSharedPreferences("catalog", MODE_PRIVATE).getString(key, "[]")); }
         catch (JSONException e) {
             new AlertDialog.Builder(this).setMessage(display(String.valueOf("建檔資料無法讀取，請勿繼續新增。"))).setPositiveButton("知道了", null).show();
             throw new IllegalStateException("Invalid saved catalog", e);
@@ -930,7 +930,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject fullBackup() throws JSONException {
-        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",6);for(String key:KEYS)backup.put(key,data(key));return backup;
+        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",7);for(String key:KEYS)backup.put(key,data(key));return backup;
     }
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
@@ -953,7 +953,7 @@ public class MainActivity extends Activity {
         shortcut(shortcuts,"語音記帳",R.drawable.action_voice,()->voiceEditor(""));
         shortcut(shortcuts,"提款／轉帳",R.drawable.action_transfer,this::transferForm);
         actionGroup("帳戶管理",new String[]{"新增銀行／共用現金帳戶","查看帳戶流水與對帳","對應舊收款的實際帳戶"},new Runnable[]{this::accountForm,this::accountsDialog,this::linkReceipts});
-        actionGroup("更多功能",new String[]{"押金總覽／收付","退租結算與待收／待退"},new Runnable[]{this::depositOverview,this::settlementOverview});
+        actionGroup("更多功能",new String[]{"支出類別管理","押金總覽／收付","退租結算與待收／待退"},new Runnable[]{this::categoryManager,this::depositOverview,this::settlementOverview});
         TextView recent=text("近期紀錄",20,Color.rgb(77,57,39));recent.setTypeface(null,Typeface.BOLD);body.addView(recent);
         LinearLayout page=body,filters=new LinearLayout(this);filters.setOrientation(LinearLayout.VERTICAL);filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);
         Button filterToggle=styledButton("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"),false,false);filterToggle.setOnClickListener(v->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?View.VISIBLE:View.GONE);filterToggle.setText("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"));filterToggle.setContentDescription(expenseFiltersOpen?"搜尋與篩選，已展開":"搜尋與篩選，已收合");});page.addView(filterToggle,new LinearLayout.LayoutParams(-1,-2));page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
@@ -975,7 +975,7 @@ public class MainActivity extends Activity {
             MovementTotals totals=new MovementTotals();TextView summary=text("",14,Color.rgb(90,61,37));body.addView(summary);
             int matches=0,shown=0;String query=expenseSearch.trim().toLowerCase(Locale.ROOT);
             for(JSONObject r:rows){boolean transfer=r.has("fromId"),voided=r.optBoolean("void");if(!expenseMonth.isEmpty()&&!r.optString("date").startsWith(expenseMonth))continue;if(expenseFilter==1&&(transfer||voided)||expenseFilter==2&&(!transfer||voided)||expenseFilter==3&&!voided)continue;
-                String title=r.optString("date")+" · "+(transfer?"轉帳":r.optString("category"))+" $"+r.optLong("amount");String detail=r.optString("description")+(voided?"\n已撤銷錯誤紀錄":"");
+                String title=r.optString("date")+" · "+(transfer?"轉帳":categoryName(r.optString("category")))+" $"+r.optLong("amount");String detail=r.optString("description")+(voided?"\n已撤銷錯誤紀錄":"");
                 if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");if(splits!=null)for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
                 if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;totals.add(r);matches++;if(shown>=expenseLimit)continue;shown++;LinearLayout box=card(title,detail);if(voided)markVoided(box);else cardAction(box,"撤銷",()->voidMovement(transfer?"transfers":"expenses",r));
             }
@@ -984,6 +984,17 @@ public class MainActivity extends Activity {
         }finally{body=previous;}
     }
     private String receiptTenant(JSONObject receipt) {JSONObject lease=find("leases",receipt.optString("leaseId"));return lease==null?"":lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant");}
+    private String categoryName(String id){return ExpenseCategories.name(data("expenseCategories"),id);}
+    private void categoryManager(){
+        LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{
+            action("＋ 新增支出類別",()->categoryEdit(null));card("類別用途","用於支出分類、各類合計與語音辨識。改名會統一顯示歷史紀錄；停用只隱藏新增選項，既有支出保留。");
+            JSONArray rows=data("expenseCategories");for(int i=0;i<rows.length();i++){JSONObject r=rows.getJSONObject(i);LinearLayout box=card(r.getString("name"),r.getBoolean("active")?"使用中":"已停用 · 歷史紀錄保留");cardAction(box,"修改",()->categoryEdit(r));cardAction(box,r.getBoolean("active")?"停用":"啟用",()->{try{JSONArray next=data("expenseCategories");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("active",!r.getBoolean("active"));if(saveChecked("expenseCategories",next))render();}catch(Exception e){error(e);}});}
+        }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("支出類別管理",layout,refresh);
+    }
+    private void categoryEdit(JSONObject original){
+        LinearLayout layout=form();EditText name=labeledField(layout,"類別名稱");if(original!=null)name.setText(original.optString("name"));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(original==null?"新增支出類別":"修改支出類別").setView(layout).setNegativeButton("取消",null).setPositiveButton("儲存",null).create();dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{String n=requiredText(name);JSONArray next=data("expenseCategories");if(original==null)next.put(new JSONObject().put("id",UUID.randomUUID().toString()).put("name",n).put("active",true));else for(int i=0;i<next.length();i++)if(next.getJSONObject(i).getString("id").equals(original.getString("id")))next.getJSONObject(i).put("name",n);ExpenseCategories.validate(next,data("expenses"));if(saveChecked("expenseCategories",next)){dialog.dismiss();render();}}catch(Exception e){name.setError(e.getMessage());name.requestFocus();}}));dialog.show();
+    }
     private String accountName(String id) {JSONObject a=find("accounts",id);return a==null?"帳戶未設定":a.optString("name");}
     private String propertyName(String id) {JSONObject p=find("properties",id);return p==null?"不動產不存在":p.optString("name");}
     private long balance(JSONObject account,String date) throws JSONException {return Bookkeeping.balance(account,date,data("receipts"),data("expenses"),data("transfers"),data("deposits"),data("settlements"));}
@@ -1032,7 +1043,7 @@ public class MainActivity extends Activity {
         Runnable updateType=()->{
             int selected=kind.getSelectedItemPosition();leaseRow.setVisibility(selected==2?View.VISIBLE:View.GONE);splitView.setVisibility(selected==1?View.VISIBLE:View.GONE);
             String base="草稿日期："+(draft.optString("date").isEmpty()?"待補選":draft.optString("date"))+"\n總金額："+(draft.isNull("amount")?"待填":"$"+draft.optLong("amount"));
-            if(selected==1)base+="\n支出分類："+(draft.optString("category").isEmpty()?"待選":draft.optString("category"));
+            if(selected==1)base+="\n支出分類："+(draft.optString("category").isEmpty()?"待選":categoryName(draft.optString("category")));
             if(selected==1||selected==2)base+="\n"+(selected==1?"付款帳戶：":"收款帳戶：")+(draft.optString("accountId").isEmpty()?"待選":accountName(draft.optString("accountId")));
             if(selected==3)base+="\n轉出："+(draft.optString("fromId").isEmpty()?"待選":accountName(draft.optString("fromId")))+"\n轉入："+(draft.optString("toId").isEmpty()?"待選":accountName(draft.optString("toId")));
             summary.setText(base);StringBuilder checks=new StringBuilder("需要核對：\n");
@@ -1062,11 +1073,13 @@ public class MainActivity extends Activity {
         if(accounts.isEmpty()||properties.length()==0){error(new IllegalArgumentException("請先建立不動產與付款帳戶"));return;}
         addDraftAccountPlaceholder(accounts,draft);
         LinearLayout layout=form();EditText date=dateField(layout,"實際付款日期",false);date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"付款來源");
-        String[] categories=Bookkeeping.CATEGORIES;if(draft!=null){categories=new String[Bookkeeping.CATEGORIES.length+1];categories[0]="請選支出分類";System.arraycopy(Bookkeeping.CATEGORIES,0,categories,1,Bookkeeping.CATEGORIES.length);}
+        List<JSONObject> categoryRows=new ArrayList<>();JSONArray categoryCatalog=data("expenseCategories");for(int i=0;i<categoryCatalog.length();i++)if(categoryCatalog.optJSONObject(i).optBoolean("active"))categoryRows.add(categoryCatalog.optJSONObject(i));
+        if(categoryRows.isEmpty()){error(new IllegalArgumentException("請先啟用至少一個支出類別"));return;}
+        String[] categories=new String[categoryRows.size()+1];categories[0]="請選支出分類";for(int i=0;i<categoryRows.size();i++)categories[i+1]=categoryRows.get(i).optString("name");
         Spinner category=choice(layout,"支出類別",categories);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
         layout.addView(text("各棟分攤金額：不分攤的留空。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++)fields.add(labeledNumber(layout,properties.optJSONObject(i).optString("name")));
-        if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));selectDraftChoice(category,draft.optString("category"));try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
+        if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));for(int c=0;c<categoryRows.size();c++)if(categoryRows.get(c).optString("id").equals(draft.optString("category")))category.setSelection(c+1);try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
         TextView sumLabel=text("分攤合計：待輸入",16,Color.rgb(90,61,37));layout.addView(sumLabel);
         TextWatcher watch=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){try{long sum=0;for(EditText f:fields){long n=amount(f,true);if(n>0)sum+=n;}long paid=amount(total,true);sumLabel.setText("分攤合計 $"+sum+(paid<0?"":" · 差額 $"+(paid-sum)));}catch(Exception e){sumLabel.setText("金額格式不正確");}}public void afterTextChanged(Editable e){}};
         total.addTextChangedListener(watch);for(EditText f:fields)f.addTextChangedListener(watch);
@@ -1074,8 +1087,8 @@ public class MainActivity extends Activity {
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONArray splits=new JSONArray();for(int i=0;i<fields.size();i++){long n=amount(fields.get(i),true);if(n>0)splits.put(new JSONObject().put("propertyId",properties.getJSONObject(i).getString("id")).put("amount",n));}
             if(category.getSelectedItem().toString().equals("請選支出分類"))throw new IllegalArgumentException("請選擇支出類別");
-            JSONObject a=selectedDraftAccount(accounts,account);JSONObject row=Bookkeeping.expense(dateValue(date),a.getString("id"),category.getSelectedItem().toString(),requiredText(description),amount(total,false),splits);
-            StringBuilder preview=new StringBuilder(row.getString("date")+" · "+row.getString("category")+"\n"+row.getString("description")+"\n付款："+a.getString("name")+" $"+row.getLong("amount"));
+            JSONObject a=selectedDraftAccount(accounts,account);JSONObject row=Bookkeeping.expense(dateValue(date),a.getString("id"),categoryRows.get(category.getSelectedItemPosition()-1).getString("id"),requiredText(description),amount(total,false),splits);
+            StringBuilder preview=new StringBuilder(row.getString("date")+" · "+categoryName(row.getString("category"))+"\n"+row.getString("description")+"\n付款："+a.getString("name")+" $"+row.getLong("amount"));
             for(int i=0;i<splits.length();i++)preview.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));
             preview.append(LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(a.getString("start")))?"\n起算日前歷史：不再扣期初餘額。":"\n只扣付款帳戶一次，不因分攤重複扣款。");
             new AlertDialog.Builder(this).setMessage(display(String.valueOf(preview))).setNegativeButton("修改",null).setPositiveButton("確認支出",(d,b)->{try{
@@ -1151,7 +1164,7 @@ public class MainActivity extends Activity {
                 List<JSONObject> lines=new ArrayList<>();
                 JSONArray receipts=data("receipts"),expenses=data("expenses"),transfers=data("transfers");
                 for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.optBoolean("cash",true)&&id.equals(r.optString("accountId")))lines.add(new JSONObject().put("date",r.getString("date")).put("label","收款 "+receiptTenant(r)+" · "+accountName(r.optString("accountId"))).put("delta",r.getLong("amount")).put("note",r.optString("note")));}
-                for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(id.equals(r.getString("accountId"))&&!r.optBoolean("void"))lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("category")).put("delta",-r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","expenses").put("sourceId",r.getString("id")));}
+                for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(id.equals(r.getString("accountId"))&&!r.optBoolean("void"))lines.add(new JSONObject().put("date",r.getString("date")).put("label",categoryName(r.getString("category"))).put("delta",-r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","expenses").put("sourceId",r.getString("id")));}
                 for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void"))continue;boolean from=id.equals(r.getString("fromId")),to=id.equals(r.getString("toId"));if(from||to)lines.add(new JSONObject().put("date",r.getString("date")).put("label","轉帳 "+accountName(r.getString("fromId"))+" → "+accountName(r.getString("toId"))).put("delta",from?-r.getLong("amount"):r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","transfers").put("sourceId",r.getString("id")));}
                 JSONArray deposits=data("deposits");for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);if(r.getString("kind").equals("押金抵付費用")||r.getBoolean("void")||!id.equals(r.getString("accountId")))continue;
                     lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("kind")+" · "+receiptTenant(r)).put("delta",r.getString("kind").equals("收到押金")?r.getLong("amount"):-r.getLong("amount")).put("note",r.getString("note")).put("sourceKey","deposits").put("sourceId",r.getString("id")));}
@@ -1261,10 +1274,10 @@ public class MainActivity extends Activity {
                 YearMonth ym=YearMonth.parse(dateValue(month));JSONArray expenses=data("expenses"),properties=data("properties");String start=ym.atDay(1).toString(),end=ym.atEndOfMonth().toString();
                 card(ym+" 已登錄支出","合計 $"+Bookkeeping.expenseTotal(expenses,start,end,null)+"\n包含房貸整筆扣款；此為現金支出，不是會計損益。轉帳與已撤銷錯誤不列支出。資料仍在補登，未登錄不表示沒有費用。");
                 for(int i=0;i<properties.length();i++){JSONObject p=properties.getJSONObject(i);card(p.getString("name"),"分攤支出 $"+Bookkeeping.expenseTotal(expenses,start,end,p.getString("id")));}
-                for(String category:Bookkeeping.CATEGORIES){long sum=0;for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&r.getString("date").startsWith(ym.toString())&&category.equals(r.getString("category")))sum+=r.getLong("amount");}card(category,"$"+sum);}
+                for(int ci=0;ci<data("expenseCategories").length();ci++){String category=data("expenseCategories").optJSONObject(ci).optString("id");long sum=0;for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&r.getString("date").startsWith(ym.toString())&&category.equals(r.getString("category")))sum+=r.getLong("amount");}card(categoryName(category),"$"+sum);}
                 List<JSONObject> rows=new ArrayList<>();for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&r.getString("date").startsWith(ym.toString()))rows.add(r);}rows.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
                 for(JSONObject r:rows){StringBuilder detail=new StringBuilder(accountName(r.getString("accountId"))+"\n"+r.getString("description"));JSONArray splits=r.getJSONArray("splits");for(int i=0;i<splits.length();i++)detail.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));
-                    LinearLayout box=card(r.getString("date")+" · "+r.getString("category")+" $"+r.getLong("amount"),detail.toString());cardAction(box,"撤銷",()->voidMovement("expenses",r));}
+                    LinearLayout box=card(r.getString("date")+" · "+categoryName(r.getString("category"))+" $"+r.getLong("amount"),detail.toString());cardAction(box,"撤銷",()->voidMovement("expenses",r));}
             }catch(Exception e){card("請選擇有效月份","點選月份欄位選取年與月");}finally{body=previous;}
         };
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("支出報表",layout,refresh);
@@ -1348,13 +1361,14 @@ public class MainActivity extends Activity {
         }catch(Exception e){if(!committed)for(File file:added)file.delete();clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("還原失敗："+e.getMessage()));});}}).start();
     }
     private void validateBackup(JSONObject backup) throws Exception {
-        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 6))
+        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 7))
             throw new IllegalArgumentException();
         if(backup.getInt("version")==1) {backup.put("invoices",new JSONArray());backup.put("receipts",new JSONArray());}
         if(backup.getInt("version")<3)for(String key:new String[]{"accounts","expenses","transfers","reconciliations"})backup.put(key,new JSONArray());
         if(backup.getInt("version")<4)backup.put("deposits",new JSONArray());
         if(backup.getInt("version")<5)backup.put("settlements",new JSONArray());
         if(backup.getInt("version")<6)backup.put("meterReadings",new JSONArray());
+        if(backup.getInt("version")<7)backup.put("expenseCategories",ExpenseCategories.defaults());
         java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
         java.util.Set<String> codes = new java.util.HashSet<>();
         JSONArray p = backup.getJSONArray("properties"), u = backup.getJSONArray("units"), l = backup.getJSONArray("leases");
