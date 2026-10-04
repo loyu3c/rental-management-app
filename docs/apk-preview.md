@@ -1,6 +1,15 @@
 # APK 整合測試版
 
-版本 0.25.0-preview，versionCode=28，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.26.0-preview，versionCode=29，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.26 類別排序與語音日期
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37205870107/artifacts/11304488594)。Release單元測試、編譯、lint與Google契約測試通過；手機互動待驗證。
+
+- 記帳 → 更多功能 → 支出類別管理 → 排序，可移到最前、上移、下移、移到最後。排序立即更新並保存在備份中；支出選單同步依此順序顯示啟用項目。
+- 語音文字「5月12號戶籍謄本申請15元」會帶入2026-05-12與15元（以當年度為準）；未說年份會提醒確認。「五月十二日」亦可。完整西元日期與今天／昨天／前天繼續支援。
+- 無效日期、多日期仍需手選；整理草稿後仍需確認帳務類型、帳戶及分攤，不會直接入帳。
+- 先匯出完整備份，再解壓安裝app-release.apk。請核對排序後關閉重開、選單順序與備份還原，並測試月日辨識、年份提示與15元金額。
 
 ## 0.25 支出類別管理
 
