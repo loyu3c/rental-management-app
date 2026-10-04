@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.15.0-preview，versionCode=18，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.16.0-preview，versionCode=19，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -147,3 +147,13 @@ CSV含總計、不動產、租約列，按列別區分，不可整份重複加�
 [下載0.15.0固定簽署APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37186739586/artifacts/11296739955)。先完整備份，解壓後安裝app-release.apk。versionCode18，固定簽署與applicationId沿用。
 
 Release測試、編譯、lint與Debug Checks成功。5個報表測試涵蓋跨月現金與月底抵付、非現金押金抵付與補繳、撤銷及各棟分攤、CSV文字保護及負數保持數字。Android文件匯出、Google匯入及手機升級仍待實機驗證。
+
+## 0.16.0 Excel千位逗點與分工作表
+
+報表 → 爸爸的每月總報表 → 匯出Excel報表（千位逗點／分工作表）。使用新xlsx查看數字格式；CSV不存顯示樣式，原CSV入口保留。
+
+Excel以真正數字存金額，套用#,##0格式，負數仍數字，房號文字保留前導零。分總覽、各不動產、租約明細，凍結表頭、明細篩選、欄寬與暖色表頭。Google試算表可自行開啟／匯入，不代表自動同步。
+
+[下載0.16.0固定簽署APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37188958816/artifacts/11298341893)。先完整備份，解壓安裝app-release.apk，固定簽署/applicationId沿用，versionCode19。
+
+CI單元測試、release編譯、lint及Debug Checks成功；新增工作簿測試含ZIP/XML、數字與格式、負數、文字房號、凍結篩選、姓名字元保護。Android檔案匯出及Google試算表實際開啟外觀待實機驗證。
