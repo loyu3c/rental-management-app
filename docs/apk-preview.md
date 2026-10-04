@@ -1,6 +1,17 @@
 # APK 整合測試版
 
-版本 0.19.0-preview，versionCode=22，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.20.0-preview，versionCode=23，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.20 統一介面與待辦
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37195487831/artifacts/11300556905)。Release單元測試、APK編譯、lint及Google同步契約測試已通過。實機排版、主題互動及覆蓋更新仍待使用者驗證。
+
+- 各頁共用暖色按鈕、卡片、選取與按壓回饋；表單、日曆改為暖色主題。
+- 報表改成月報主要入口，以及帳務報表／資料備份與同步分類。
+- 首頁與報表可進入待辦總覽，分類篩選逾期待收、未完成開單、待抄電表、結算待收、押金待退。點選開啟相應操作；保存後即時刷新。
+- 自繳水電不要求抄表，已退租結算不重複顯示原帳單欠款。未來起租不提醒本月開單。
+- 請測試五個主要頁面、群組展開、日期選擇、大字體、收款後待辦消失。待辦是由已登錄資料計算，不表示歷史資料已完整。
+- 更新前匯出完整備份，再解壓縮安裝app-release.apk。
 
 ## 0.19 按鈕與到期提醒
 
