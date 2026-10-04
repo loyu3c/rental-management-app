@@ -1,5 +1,5 @@
 <resources>
-    <style name="WarmAppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="WarmBaseTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:colorAccent">#704D32</item>
         <item name="android:colorControlHighlight">#23704D32</item>
         <item name="android:colorControlActivated">#704D32</item>
@@ -8,13 +8,13 @@
         <item name="android:textColorPrimary">#533C28</item>
         <item name="android:textColorSecondary">#736657</item>
         <item name="android:statusBarColor">#F8F4ED</item>
-        <item name="android:navigationBarColor">#F8F4ED</item>
+        <item name="android:navigationBarColor">#533C28</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:alertDialogTheme">@style/WarmDialogTheme</item>
         <item name="android:datePickerDialogTheme">@style/WarmDialogTheme</item>
         <item name="android:buttonStyle">@style/WarmButton</item>
     </style>
+    <style name="WarmAppTheme" parent="WarmBaseTheme" />
     <style name="WarmDialogTheme" parent="android:style/Theme.Material.Light.Dialog.Alert">
         <item name="android:colorAccent">#704D32</item>
         <item name="android:colorControlActivated">#704D32</item>

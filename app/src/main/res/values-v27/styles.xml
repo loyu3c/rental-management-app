@@ -1,0 +1,6 @@
+<resources>
+    <style name="WarmAppTheme" parent="WarmBaseTheme">
+        <item name="android:navigationBarColor">#F8F4ED</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>
