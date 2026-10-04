@@ -540,7 +540,28 @@ public class MainActivity extends Activity {
             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("當月繳費明細",message));Toast.makeText(this,"已複製，可自行貼到LINE通知租客",Toast.LENGTH_LONG).show();
         }catch(Exception e){error(e);}
     }
+    private void paymentHistory() {
+        LinearLayout layout=form();Spinner scope=choice(layout,"月份範圍",new String[]{"指定月份","全部月份"});
+        EditText month=dateField(layout,"交易月份",true);month.setText(YearMonth.from(today()).toString());View monthRow=(View)month.getParent();
+        Spinner kind=choice(layout,"收款類型",new String[]{"全部","租金水電","收到押金","退還押金","結算補繳"});
+        EditText search=labeledField(layout,"搜尋租客／單位／帳戶／備註");LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list,new LinearLayout.LayoutParams(-1,-2));int[] limit={20};
+        Runnable[] draw={null};draw[0]=()->{
+            list.removeAllViews();monthRow.setVisibility(scope.getSelectedItemPosition()==0?View.VISIBLE:View.GONE);LinearLayout previous=body;body=list;
+            try {
+                JSONObject result=PaymentHistory.query(fullBackup(),scope.getSelectedItemPosition()==0?dateValue(month):"",kind.getSelectedItem().toString(),search.getText().toString());JSONArray rows=result.getJSONArray("rows");
+                card("符合查詢 "+rows.length()+" 筆","租金水電實收 $"+result.getLong("rent")+"\n押金收取 $"+result.getLong("depositReceived")+" · 退還 $"+result.getLong("depositRefunded")+"\n結算補繳 $"+result.getLong("topups")+"\n上述交易淨流入 $"+result.getLong("net"));
+                card("對照存摺時請留意","依實際收付日期查詢。押金不是租金收入；抵付費用不是匯款，不列入。合計依目前篩選的全部紀錄計算，並非帳戶餘額；請到帳戶流水核對其他支出與轉帳。");
+                for(int i=0;i<Math.min(limit[0],rows.length());i++){JSONObject row=rows.getJSONObject(i);tapCard(row.getString("date")+" · "+row.getString("kind")+" $"+row.getLong("amount"),row.getString("code")+" · "+row.getString("tenant")+"\n帳戶："+row.getString("account")+(row.getString("note").isEmpty()?"":"\n"+row.getString("note")),()->{JSONObject lease=find("leases",row.optString("leaseId"));if(lease!=null)leaseLedger(lease);});}
+                if(rows.length()==0)card("沒有符合的收付紀錄","可調整月份、類型或搜尋字詞；撤銷紀錄及非現金抵付不列入。");
+                if(rows.length()>limit[0])action("載入更多紀錄",()->{limit[0]+=20;draw[0].run();});
+            }catch(Exception e){error(e);}finally{body=previous;}
+        };
+        Runnable reset=()->{limit[0]=20;draw[0].run();};AdapterView.OnItemSelectedListener listener=new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int n,long id){reset.run();}};scope.setOnItemSelectedListener(listener);kind.setOnItemSelectedListener(listener);
+        TextWatcher watcher=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){reset.run();}public void afterTextChanged(Editable e){}};month.addTextChangedListener(watcher);search.addTextChangedListener(watcher);
+        draw[0].run();showPanel("收款紀錄查詢",layout,draw[0]);
+    }
     private void rentScreen() {
+        action("收款紀錄查詢",this::paymentHistory);
         card("帳單與收款", "先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款。");
         if(data("leases").length()==0){card("尚無租約","請先到不動產建立出租單位與租約。");return;}
         EditText search=field(body,"搜尋姓名、不動產或代號");search.setText(rentSearch);
