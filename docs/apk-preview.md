@@ -1,6 +1,16 @@
 # APK 整合測試版
 
-版本 0.22.0-preview，versionCode=25，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.23.0-preview，versionCode=26，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.23 撤銷位置及已撤銷風格
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37200485419/artifacts/11302487804)。Release單元測試、編譯、lint及Google契約測試已通過。手機排版待實機驗證。
+
+- 記帳、支出報表、帳戶流水、收款、押金、抄表的撤銷都在該筆卡片右下，與內文同列底部對齊，保留48dp觸控高度。
+- 月帳單展開後才顯示租金／水電撤銷，維持原收款限制。
+- 已撤銷且保留在資料中的紀錄：灰底、灰字、刪除線及已撤銷狀態；不能再次撤銷。歷史照片可查看。
+- 請核對長備註、大字體、多操作卡片、撤銷後即時更新及有效合計不變。原錯誤收款／帳單移除流程維持原樣。
+- 先匯出完整備份，再解壓縮安裝app-release.apk覆蓋更新。
 
 ## 0.22 上期電表與語音欄位連動
 
