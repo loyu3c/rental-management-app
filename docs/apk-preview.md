@@ -1,6 +1,6 @@
 # APK 整合測試版
 
-版本 0.14.0-preview，versionCode=17，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.15.0-preview，versionCode=18，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
 
 ## 下載與安裝
 
@@ -137,3 +137,13 @@ Release單元測試、编譯、lint和Debug Checks成功。手機外觀、放大
 [下載0.14.0固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37183854743/artifacts/11296341427)。先匯出備份再解壓安裝app-release.apk，固定簽署及applicationId沿用，versionCode17。
 
 CI單元測試、release編譯及lint成功；新增摘要測試確認轉帳與撤銷不增加支出、超過15筆及long合計。手機操作和外觀仍待驗證。
+
+## 0.15.0 房東每月合併報表
+
+報表 → 爸爸的每月總報表／CSV匯出，選月份查看所有不動產、各棟與租約明細。租金水電依收到日期合併實收；帳單應收依月份，抵付及持有押金截至月底。結算實際補繳另列，非現金抵付不重複算收款。支出按各棟分攤，撤銷不列入；淨收款不含押金與轉帳，也不是銀行餘額或會計損益。
+
+CSV含總計、不動產、租約列，按列別區分，不可整份重複加總。只含姓名房號帳務，不含電話Gmail備註照片。自行匯入Google試算表，非自動同步；租客獨立報表／雲端權限仍未啟用。
+
+[下載0.15.0固定簽署APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37186739586/artifacts/11296739955)。先完整備份，解壓後安裝app-release.apk。versionCode18，固定簽署與applicationId沿用。
+
+Release測試、編譯、lint與Debug Checks成功。5個報表測試涵蓋跨月現金與月底抵付、非現金押金抵付與補繳、撤銷及各棟分攤、CSV文字保護及負數保持數字。Android文件匯出、Google匯入及手機升級仍待實機驗證。
