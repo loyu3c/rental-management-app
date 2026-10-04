@@ -1,0 +1,7 @@
+package com.loyu3c.rental;
+import org.junit.Test;import static org.junit.Assert.*;
+public class SyncProtocolTest {
+ @Test public void endpointRequiresExactGoogleDeployment()throws Exception{assertEquals("script.google.com",SyncProtocol.endpoint("https://script.google.com/macros/s/example/exec").getHost());for(String s:new String[]{"http://script.google.com/macros/s/x/exec","https://example.com/macros/s/x/exec","https://script.google.com.evil.test/macros/s/x/exec","https://script.google.com/macros/s/x/dev","https://user@script.google.com/macros/s/x/exec","https://script.google.com/macros/s/x/exec?token=x"}){try{SyncProtocol.endpoint(s);fail(s);}catch(IllegalArgumentException expected){}}}
+ @Test public void redirectNeverRepostsCredentialsToOtherHost()throws Exception{assertEquals("script.googleusercontent.com",SyncProtocol.redirect("https://script.googleusercontent.com/macros/echo?x=1").getHost());for(String s:new String[]{"https://accounts.google.com/login","https://evil.test/","http://script.googleusercontent.com/"}){try{SyncProtocol.redirect(s);fail(s);}catch(IllegalArgumentException expected){}}}
+ @Test public void privateKeyAndReturnedSpreadsheetAreValidated(){SyncProtocol.token("a".repeat(64));try{SyncProtocol.token("123");fail();}catch(IllegalArgumentException expected){}assertEquals("https://docs.google.com/spreadsheets/d/example/edit",SyncProtocol.reportUrl("https://docs.google.com/spreadsheets/d/example/edit"));try{SyncProtocol.reportUrl("https://evil.test");fail();}catch(IllegalArgumentException expected){}}
+}

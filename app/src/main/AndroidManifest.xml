@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<uses-permission android:name="android.permission.INTERNET" />
 <application android:label="租務管理・預覽" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true">
 <provider android:name=".PhotoProvider" android:authorities="${applicationId}.photos" android:exported="false" android:grantUriPermissions="true" />
 <activity android:name=".MainActivity" android:exported="true">

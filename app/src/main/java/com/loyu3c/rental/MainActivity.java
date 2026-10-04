@@ -32,6 +32,7 @@ public class MainActivity extends Activity {
     private void refreshPanels() {
         for(Map.Entry<AlertDialog,Runnable> panel:new ArrayList<>(livePanels.entrySet()))if(panel.getKey().isShowing())panel.getValue().run();
     }
+    private boolean googleSyncRunning=false;
     private String pendingBackup;
     private String propertyId="", unitId="";
     private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings"};
@@ -75,7 +76,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(248, 244, 237)); root.setPadding(dp(16), dp(16), dp(16), dp(8));
         TextView heading = text("暖色帳本 / " + tabs[selected], 26, Color.rgb(83, 60, 40));
         heading.setTypeface(null, Typeface.BOLD); root.addView(heading);
-        root.addView(text("整合測試版 · 資料存在手機；Google同步未啟用", 13, Color.rgb(137, 83, 15)));
+        root.addView(text("整合測試版 · 資料存在手機；"+(getSharedPreferences("googleSync",MODE_PRIVATE).contains("connection")?"Google已設定（手動同步）":"Google同步未設定"), 13, Color.rgb(137, 83, 15)));
         ScrollView scroll = new ScrollView(this);
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -113,7 +114,7 @@ public class MainActivity extends Activity {
             card("歷史補登", "起算日前歷史交易列入報表，不重複改變期初餘額。\n帳務未齊，餘額需核對；押金另行追蹤，不是可用租金收入。");
             action("匯出完整備份", this::exportBackup);
             action("從檔案還原資料", this::importBackup);
-            card("Google 同步：未設定", "目前尚未連接 Google，也沒有上傳任何資料。");
+            action("Google同步設定／狀態",this::googleSyncSettings);
         }
         LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
         for (int i = 0; i < tabs.length; i++) {
@@ -1064,6 +1065,7 @@ public class MainActivity extends Activity {
             JSONObject report=OwnerReport.build(fullBackup(),YearMonth.parse(dateValue(month)));JSONObject total=report.getJSONObject("total");
             card("每月總覽",ownerSummary(total));
             card("報表口徑","帳單應收按帳單月份；抵付狀態截至月底，包含押金抵付。實收按收到日期，租金與水電合併。押金不列收入，提款轉帳不列支出。未建帳單不代表已繳清；此淨收款不是銀行餘額或會計損益。");
+            action("立即同步此月份到Google試算表",()->googleSync(report,false));
             action("匯出Excel報表（千位逗點／分工作表）",()->exportOwnerWorkbook(report));
             action("匯出此月份CSV（原始資料）",()->exportOwnerReport(report));
             JSONArray properties=report.getJSONArray("properties");for(int i=0;i<properties.length();i++){JSONObject row=properties.getJSONObject(i);card(row.getString("name"),ownerSummary(row));}
@@ -1072,6 +1074,20 @@ public class MainActivity extends Activity {
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("爸爸的每月總報表",layout,refresh);
     }
     private String ownerSummary(JSONObject row)throws JSONException{return "本月已建帳單 $"+row.getLong("billed")+" · "+row.getInt("invoiceCount")+" 筆\n截至月底已抵付 $"+row.getLong("paid")+" · 本月帳單未付 $"+row.getLong("remaining")+"\n本月租金水電實收 $"+row.getLong("cash")+"\n本月結算補繳實收 $"+row.getLong("topups")+"\n本月分攤支出 $"+row.getLong("expenses")+"\n本月淨收款 $"+row.getLong("net")+"（不含押金及轉帳）\n月底持有押金 $"+row.getLong("held");}
+    private String syncTime(String value) {try{return java.time.Instant.parse(value).atZone(ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));}catch(Exception e){return "尚未同步";}}
+    private void googleSyncSettings() {
+        LinearLayout layout=form();EditText url=field(layout,"Google部署網址（/exec）"),token=field(layout,"App同步金鑰");token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);token.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);
+        try {JSONObject settings=SyncSettings.load(this);if(settings!=null){url.setText(settings.getString("url"));token.setText(settings.getString("token"));}}catch(Exception e){layout.addView(text("設定無法解密，請重新填寫連線資訊。",14,Color.DKGRAY));}
+        android.content.SharedPreferences prefs=getSharedPreferences("googleSync",MODE_PRIVATE);layout.addView(text("第一版需手動同步房東月報。Google端先部署專案內google-sync服務，執行初始化後把部署網址及金鑰填在這裡。金鑰只保存在手機，不放完整備份或GitHub。",14,Color.DKGRAY));layout.addView(text("最後成功月份："+prefs.getString("lastMonth","尚未同步")+"\n最後成功時間："+syncTime(prefs.getString("lastSuccess",""))+"\n最近結果："+prefs.getString("status","尚未測試連線"),14,Color.DKGRAY));
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Google同步設定／狀態").setView(scroll).setNegativeButton("關閉",null).setNeutralButton("測試連線",null).setPositiveButton("保存設定",null).create();dialog.setOnShowListener(v->{Runnable save=()->{try{if(googleSyncRunning)throw new IllegalArgumentException("同步正在執行，請完成後再變更設定");String endpoint=requiredText(url),secret=requiredText(token);JSONObject current=null;try{current=SyncSettings.load(this);}catch(Exception ignored){}if(current==null||!endpoint.equals(current.optString("url"))||!secret.equals(current.optString("token")))SyncSettings.save(this,endpoint,secret);dialog.dismiss();render();}catch(Exception e){error(e);}};dialog.getButton(-1).setOnClickListener(w->save.run());dialog.getButton(-3).setOnClickListener(w->{save.run();if(!dialog.isShowing())googleSync(null,true);});});dialog.show();
+    }
+    private void googleSync(JSONObject report,boolean checkOnly) {
+        if(googleSyncRunning){error(new IllegalArgumentException("同步正在執行，請稍候"));return;}JSONObject settings;try{settings=SyncSettings.load(this);if(settings==null){googleSyncSettings();return;}}catch(Exception e){error(new IllegalArgumentException("同步設定無法讀取，請重新設定"));return;}
+        googleSyncRunning=true;String configuration=getSharedPreferences("googleSync",MODE_PRIVATE).getString("connection","");AlertDialog progress=busy(checkOnly?"正在測試Google連線…":"正在同步選定月份報表…");new Thread(()->{try{
+            JSONObject response=SyncProtocol.send(settings.getString("url"),settings.getString("token"),checkOnly?"check":"sync",report);android.content.SharedPreferences prefs=getSharedPreferences("googleSync",MODE_PRIVATE);if(!configuration.equals(prefs.getString("connection","")))throw new IOException("同步設定已變更，請重新測試連線");android.content.SharedPreferences.Editor edit=prefs.edit().putString("reportUrl",response.getString("url")).putString("status",checkOnly?"連線成功，尚未同步本次報表":"成功同步選定月份（手機後續變動需再同步）");if(!checkOnly)edit.putString("lastMonth",response.getString("month")).putString("lastSuccess",response.getString("syncedAt"));edit.commit();runOnUiThread(()->{googleSyncRunning=false;if(isFinishing()||isDestroyed())return;progress.dismiss();new AlertDialog.Builder(this).setMessage(checkOnly?"連線成功，未上傳帳務。回到房東月報選月份後，點立即同步。":"此月份房東報表已更新；之後修改帳務需再同步。租客雲端報表尚未啟用。").setNegativeButton("關閉",null).setPositiveButton("開啟試算表",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(response.optString("url"))));}catch(Exception e){error(new IllegalArgumentException("手機沒有可開啟試算表的App"));}}).show();});
+        }catch(Exception e){String message=e instanceof java.net.SocketTimeoutException?"同步逾時；Google可能已收到，請核對試算表再重試，同月份重試不會追加交易。":e.getMessage();getSharedPreferences("googleSync",MODE_PRIVATE).edit().putString("status",message==null?"同步失敗，請檢查網路及部署設定":message).commit();runOnUiThread(()->{googleSyncRunning=false;if(isFinishing()||isDestroyed())return;progress.dismiss();error(new IllegalArgumentException(message==null?"同步失敗，請檢查網路及部署設定":message));});}
+        }).start();
+    }
     private void exportOwnerWorkbook(JSONObject report) {
         try {if(!getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingWorkbook",report.toString()).commit())throw new IOException("報表快照保存失敗");Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").putExtra(Intent.EXTRA_TITLE,"rental-owner-"+report.getString("month")+".xlsx");startActivityForResult(intent,EXPORT_WORKBOOK);}catch(Exception e){error(e);}
     }
