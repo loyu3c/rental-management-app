@@ -27,14 +27,29 @@ public final class VoiceDrafts {
         List<JSONObject> ordered=new ArrayList<>(),matched=new ArrayList<>();for(int i=0;i<rows.length();i++)ordered.add(rows.getJSONObject(i));ordered.sort(Comparator.comparingInt((JSONObject r)->r.optString(column).length()).reversed());
         for(JSONObject r:ordered){String name=r.getString(column);boolean shorter=false;for(JSONObject old:matched)if(old.getString(column).contains(name))shorter=true;if(!shorter&&named(text,name))matched.add(r);}return matched;
     }
+    static String transactionDate(String text,LocalDate today,JSONArray warnings) {
+        List<String> dates=new ArrayList<>();boolean invalid=false,inferred=false;
+        String token="[0-9零〇一二兩三四五六七八九十]+";
+        Matcher m=Pattern.compile("(?<![0-9])(?:(20[0-9]{2})[-/年])?("+token+")[月]("+token+")(?:日|號)|(?<![0-9])(20[0-9]{2})[-/](\\d{1,2})[-/](\\d{1,2})(?![0-9])").matcher(text);
+        while(m.find())try{
+            boolean slash=m.group(4)!=null;String year=slash?m.group(4):m.group(1);
+            int y=year==null?today.getYear():Integer.parseInt(year);
+            int month=(int)integer(slash?m.group(5):m.group(2)),day=(int)integer(slash?m.group(6):m.group(3));
+            dates.add(LocalDate.of(y,month,day).toString());if(year==null)inferred=true;
+        }catch(Exception e){invalid=true;}
+        for(String relative:new String[]{"今天","昨天","前天"})if(text.contains(relative))dates.add(today.minusDays(relative.equals("今天")?0:relative.equals("昨天")?1:2).toString());
+        if(invalid){warnings.put("日期無效，請點日曆補選");return "";}
+        if(dates.size()>1){warnings.put("說了多個日期，請指定交易日期");return "";}
+        if(dates.size()==1){if(inferred)warnings.put("未說年份，日期先使用今年（"+today.getYear()+"年），請確認");return dates.get(0);}
+        return "";
+    }
     public static JSONObject parse(String raw,LocalDate today,JSONObject catalog) throws JSONException {
         if(raw.trim().isEmpty()||raw.length()>4000)throw new IllegalArgumentException("請輸入4000字以內的記帳內容");String text=raw.trim().replace('，',',').replaceAll("(?<=\\d),(?=\\d)","");
         JSONArray warnings=new JSONArray();String kind="",category="",date="";boolean transfer=has(text,"提款","提領","提取","轉帳","轉入","轉出"),receipt=has(text,"收到租金","收租","租金收入","收到房租")||Pattern.compile("(?:收到|收取).{0,40}(?:租金|房租)").matcher(text).find(),expense=has(text,"修繕","維修","更換","電梯保養","清潔","打掃","房貸","支出","付款","花了");
         int types=(transfer?1:0)+(receipt?1:0)+(expense?1:0);if(types==1)kind=transfer?"轉帳":receipt?"收款":"支出";else warnings.put("請選擇這一筆是支出、收到租金或提款／轉帳");
         boolean blocked=has(text,"押金","退款","退還","退租","手續費");if(blocked)warnings.put("押金／退款／退租請使用專用入口；含手續費請拆成轉帳與支出兩筆");
         if(has(text,"電梯保養"))category="電梯保養";else if(has(text,"清潔","打掃"))category="清潔打掃";else if(has(text,"房貸"))category="房貸扣款";else if(has(text,"修繕","維修","更換"))category="修繕";else if(has(text,"其他費用"))category="其他費用";
-        List<String> dates=new ArrayList<>();Matcher dm=Pattern.compile("(20[0-9]{2})[-/年]([0-9]{1,2})[-/月]([0-9]{1,2})(?:日|號)?").matcher(text);while(dm.find())try{dates.add(LocalDate.of(Integer.parseInt(dm.group(1)),Integer.parseInt(dm.group(2)),Integer.parseInt(dm.group(3))).toString());}catch(Exception e){warnings.put("日期無效，請點日曆補選");}
-        if(dates.size()==1)date=dates.get(0);else if(dates.size()>1)warnings.put("說了多個日期，請指定交易日期");else if(has(text,"今天")&&!has(text,"昨天","前天"))date=today.toString();else if(has(text,"昨天")&&!has(text,"今天","前天"))date=today.minusDays(1).toString();else if(has(text,"前天")&&!has(text,"今天","昨天"))date=today.minusDays(2).toString();
+        date=transactionDate(text,today,warnings);
         Object amount=JSONObject.NULL;List<Long> amounts=new ArrayList<>();boolean bad=false;Matcher money=Pattern.compile("("+NUM+")\\s*(?:元|塊)").matcher(text);while(money.find())try{amounts.add(integer(money.group(1)));}catch(Exception e){bad=true;}
         Matcher total=Pattern.compile("(?:總共|合計|總額|總金額|共計)\\s*("+NUM+")\\s*(?:元|塊)").matcher(text);List<Long> totals=new ArrayList<>();while(total.find())try{totals.add(integer(total.group(1)));}catch(Exception e){bad=true;}
         if(!bad&&totals.size()==1)amount=totals.get(0);else if(!bad&&amounts.size()==1)amount=amounts.get(0);else warnings.put("金額未明確或有多筆金額，請自行填總金額（建議說金額加元）");

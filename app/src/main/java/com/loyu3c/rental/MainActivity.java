@@ -987,9 +987,18 @@ public class MainActivity extends Activity {
     private String categoryName(String id){return ExpenseCategories.name(data("expenseCategories"),id);}
     private void categoryManager(){
         LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{
-            action("＋ 新增支出類別",()->categoryEdit(null));card("類別用途","用於支出分類、各類合計與語音辨識。改名會統一顯示歷史紀錄；停用只隱藏新增選項，既有支出保留。");
-            JSONArray rows=data("expenseCategories");for(int i=0;i<rows.length();i++){JSONObject r=rows.getJSONObject(i);LinearLayout box=card(r.getString("name"),r.getBoolean("active")?"使用中":"已停用 · 歷史紀錄保留");cardAction(box,"修改",()->categoryEdit(r));cardAction(box,r.getBoolean("active")?"停用":"啟用",()->{try{JSONArray next=data("expenseCategories");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("active",!r.getBoolean("active"));if(saveChecked("expenseCategories",next))render();}catch(Exception e){error(e);}});}
+            action("＋ 新增支出類別",()->categoryEdit(null));card("類別用途","用於支出分類、各類合計與語音辨識。改名會統一顯示歷史紀錄；停用只隱藏新增選項，既有支出保留。排序會同步套用到記帳選單，可將常用類別移到最前。");
+            JSONArray rows=data("expenseCategories");for(int i=0;i<rows.length();i++){JSONObject r=rows.getJSONObject(i);LinearLayout box=card(r.getString("name"),r.getBoolean("active")?"使用中":"已停用 · 歷史紀錄保留");cardAction(box,"排序",()->categoryOrder(r.optString("id")));cardAction(box,"修改",()->categoryEdit(r));cardAction(box,r.getBoolean("active")?"停用":"啟用",()->{try{JSONArray next=data("expenseCategories");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("active",!r.getBoolean("active"));if(saveChecked("expenseCategories",next))render();}catch(Exception e){error(e);}});}
         }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("支出類別管理",layout,refresh);
+    }
+    private void categoryOrder(String id){
+        JSONArray rows=data("expenseCategories");int position=-1;for(int i=0;i<rows.length();i++)if(id.equals(rows.optJSONObject(i).optString("id")))position=i;if(position<0)return;
+        final int current=position;List<String> labels=new ArrayList<>();List<Integer> targets=new ArrayList<>();
+        if(current>0){labels.add("移到最前");targets.add(0);labels.add("上移一位");targets.add(current-1);}if(current<rows.length()-1){labels.add("下移一位");targets.add(current+1);labels.add("移到最後");targets.add(rows.length()-1);}
+        new AlertDialog.Builder(this).setTitle(categoryName(id)+" · 排序").setItems(labels.toArray(new String[0]),(d,w)->{try{
+            JSONArray latest=data("expenseCategories");if(!latest.toString().equals(rows.toString()))throw new IllegalArgumentException("類別已變更，請重新排序");
+            if(saveChecked("expenseCategories",ExpenseCategories.move(latest,id,targets.get(w))))render();
+        }catch(Exception e){error(e);}}).setNegativeButton("取消",null).show();
     }
     private void categoryEdit(JSONObject original){
         LinearLayout layout=form();EditText name=labeledField(layout,"類別名稱");if(original!=null)name.setText(original.optString("name"));

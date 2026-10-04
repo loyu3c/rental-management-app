@@ -45,4 +45,12 @@ public class VoiceDraftsTest {
     @Test public void explicitAndRelativeDatesAndThousandsSeparators() throws Exception {
         assertEquals("2026-10-03",parse("昨天A棟修繕3,000元").getString("date"));assertEquals(3000,parse("2026年10月2日A棟修繕3,000元").getLong("amount"));assertEquals("2026-10-02",parse("2026年10月2日A棟修繕3,000元").getString("date"));assertEquals("",parse("2026年2月30日A棟修繕3000元").getString("date"));
     }
+    @Test public void monthDaySpeechUsesVisibleCurrentYearSuggestion() throws Exception {
+        JSONObject d=parse("5月12號戶籍謄本申請15元");assertEquals("2026-05-12",d.getString("date"));assertEquals(15,d.getLong("amount"));assertTrue(d.getJSONArray("warnings").toString().contains("未說年份"));
+        assertEquals("2026-05-12",parse("五月十二日清潔200元").getString("date"));
+        assertEquals("2025-05-12",parse("2025年5月12號清潔200元").getString("date"));
+        assertEquals("",parse("2月30號清潔200元").getString("date"));
+        assertEquals("",parse("今天5月12號清潔200元").getString("date"));
+        assertEquals("",parse("5月12號和6月13號清潔200元").getString("date"));
+    }
 }
