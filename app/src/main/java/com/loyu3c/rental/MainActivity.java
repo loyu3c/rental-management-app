@@ -556,23 +556,47 @@ public class MainActivity extends Activity {
         filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){rentFilter=n;refresh.run();}public void onNothingSelected(AdapterView<?> p){}});refresh.run();
     }
     private void leaseLedger(JSONObject lease) {
-        LinearLayout content=form();
-        Runnable refresh=()->drawLeaseLedger(content,find("leases",lease.optString("id")));
-        refresh.run();showPanel("帳單與收款",content,refresh);
+        String leaseId=lease.optString("id");int[] tab={0};
+        LinearLayout page=form();page.setBackgroundColor(Color.rgb(248,244,237));
+        LinearLayout header=form();page.addView(header);
+        LinearLayout tabs=new LinearLayout(this);page.addView(tabs,new LinearLayout.LayoutParams(-1,-2));
+        ScrollView scroll=new ScrollView(this);LinearLayout content=form();scroll.addView(content);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();
+        String[] names={"總覽","帳單","押金","退租結算"};Button[] buttons=new Button[names.length];
+        Runnable refresh=()->{
+            JSONObject current=find("leases",leaseId);header.removeAllViews();
+            header.addView(text(current==null?"租約已不存在":current.optString("unitCodeSnapshot")+" · "+current.optString("tenant"),22,Color.rgb(90,61,37)));
+            if(current!=null)header.addView(text(current.has("terminatedOn")?"已退租 · "+current.optString("terminatedOn"):"租期 "+current.optString("start")+" ～ "+current.optString("end"),14,Color.DKGRAY));
+            for(int i=0;i<buttons.length;i++)if(buttons[i]!=null){buttons[i].setTextColor(Color.rgb(90,61,37));buttons[i].setBackgroundColor(i==tab[0]?Color.rgb(232,213,187):Color.rgb(248,244,237));buttons[i].setSelected(i==tab[0]);}
+            drawLeaseLedger(content,current,tab[0]);
+        };
+        for(int i=0;i<names.length;i++){final int index=i;Button b=new Button(this);buttons[i]=b;b.setText(names[i]);b.setTextSize(13);b.setAllCaps(false);b.setPadding(0,dp(8),0,dp(8));b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(dp(48));tabs.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(v->{tab[0]=index;refresh.run();scroll.scrollTo(0,0);});}
+        Button close=new Button(this);close.setText("返回");close.setAllCaps(false);close.setOnClickListener(v->dialog.dismiss());page.addView(close,new LinearLayout.LayoutParams(-1,-2));
+        livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();scroll.post(()->scroll.scrollTo(0,y));});dialog.setOnDismissListener(d->livePanels.remove(dialog));refresh.run();dialog.show();
+        if(dialog.getWindow()!=null)dialog.getWindow().setLayout(-1,-1);
     }
-    private void drawLeaseLedger(LinearLayout content,JSONObject lease) {
+    private void drawLeaseLedger(LinearLayout content,JSONObject lease,int tab) {
         content.removeAllViews();LinearLayout previous=body;body=content;
         try {
-            if(lease==null){card("租約已不存在","資料已變動，請關閉明細。");return;}
+            if(lease==null){card("租約已不存在","請返回不動產重新選擇。");return;}
             JSONArray invoices=data("invoices"),receipts=data("receipts");long debt=0,received=0,credit=0;
-            for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}
-            for(int i=0;i<receipts.length();i++) {JSONObject r=receipts.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId"))){if(r.optBoolean("cash",true))received+=Ledger.money(r,"amount");credit+=Ledger.money(r,"amount")-Ledger.allocated(r);}}
-            card(lease.optString("tenant")+" · "+lease.optString("unitCodeSnapshot"),"帳單未付 $"+debt+"（含未到期）\n實際收款累計 $"+received+"\n尚未分配收款 $"+credit+"\n押金不包含於上述租金收款。");
+            for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}
+            for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId"))){if(r.optBoolean("cash",true))received+=Ledger.money(r,"amount");credit+=Ledger.money(r,"amount")-Ledger.allocated(r);}}
+            JSONObject settlement=Settlements.forLease(data("settlements"),lease.getString("id"));
+            JSONObject deposit=Deposits.summary(lease.getString("id"),data("deposits"));
+            if(tab==0){
+                card(settlement==null?"帳單待繳（含未到期）":"結算待補繳","$"+(settlement==null?debt:Settlements.due(settlement)));
+                card("持有押金","$"+deposit.getLong("held"));
+                if(!lease.has("terminatedOn"))action("＋ 收到租金",()->receiptForm(lease));
+                else {if(settlement!=null&&Settlements.due(settlement)>0)action("＋ 收到結算補繳",()->settlementPaymentForm(lease));if(deposit.getLong("held")>0)action("退還剩餘押金",()->depositForm(lease,true));}
+                card("收款摘要","租金與水電實收累計 $"+received+"\n尚未分配 $"+credit+"\n押金與結算補繳另外記錄。");
+                if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
+                card("租約資料",lease.optString("start")+" ～ "+lease.optString("end")+"\n月租金 $"+lease.optLong("rent")+" · 約定押金 $"+lease.optLong("deposit"));
+                return;
+            }
+            if(tab==2){depositCard(lease);return;}
+            if(tab==3){if(settlement==null)card("尚未退租結算","退租時分開記錄費用與押金收退，再核對實際退款或補繳。");settlementCard(lease);return;}
             if(!lease.has("terminatedOn"))action("＋ 建立當月帳單（租金＋水電）",()->billingForm(lease));
-            if(!lease.has("terminatedOn"))action("＋ 收到租金",()->receiptForm(lease));
-            if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
-            depositCard(lease);
-            settlementCard(lease);
             action("抄電表／查看照片",()->meterPanel(lease));
             Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
             for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))months.computeIfAbsent(r.getString("month"),key->new ArrayList<>()).add(r);}
@@ -583,11 +607,18 @@ public class MainActivity extends Activity {
                     if(r.getString("kind").equals("租金"))hasRent=true;else{hasUtility=true;detail.append("\n電表 ").append(fmt(r.getLong("previous"))).append(" → ").append(fmt(r.getLong("current"))).append(" · 每度 $").append(r.getLong("rate"));}
                 }
                 String utility=hasUtility?"水費 $"+water+"／電費 $"+electric:lease.optString("utilities").equals("管理者代收水電")?"水電尚未建立":"水電自行繳納";
-                card(entry.getKey()+" · 當月帳單",(hasRent?"租金 $"+rent:"租金尚未建立")+"\n"+utility+detail+"\n已建立合計 $"+total+" · 已付 $"+paid+"\n尚需繳付 $"+(total-paid));
+                LinearLayout monthBox=card(entry.getKey()+" · 當月帳單","應收 $"+total+" · 已付 $"+paid+"\n待繳 $"+(total-paid));
+                LinearLayout details=form();details.setVisibility(View.GONE);monthBox.addView(details);
+                LinearLayout monthParent=body;body=details;
+                card("帳單內容",(hasRent?"租金 $"+rent:"租金尚未建立")+"\n"+utility+detail+"\n已建立合計 $"+total+" · 已付 $"+paid+"\n尚需繳付 $"+(total-paid));
                 for(JSONObject bill:entry.getValue())if(bill.has("meterReadingId")){JSONObject meter=find("meterReadings",bill.optString("meterReadingId"));if(meter!=null&&!meter.optString("file").isEmpty())action("查看此帳單的電表照片",()->viewMeterPhoto(meter.optString("file")));}
                 final String billMonth=entry.getKey();action("複製 "+billMonth+" 繳費明細",()->copyBill(lease,billMonth));
                 for(JSONObject r:entry.getValue())if(!lease.has("terminatedOn")&&Ledger.paid(r.getString("id"),receipts)==0)action("撤銷 "+r.optString("month")+" 的"+r.optString("kind")+"項目",()->deleteInvoice(r));
+                body=monthParent;
+                cardAction(monthBox,"展開／收合明細",()->details.setVisibility(details.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
             }
+            if(months.isEmpty())card("尚無帳單","建立當月租金與水電後，會顯示在這裡。");
+            card("收款紀錄","實際租金與水電收款，以及結算抵付紀錄。");
             for(int i=receipts.length()-1;i>=0;i--) {JSONObject r=receipts.getJSONObject(i);if(!lease.optString("id").equals(r.getString("leaseId")))continue;
                 card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),r.getString("account")+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
                 if(!lease.has("terminatedOn"))action("撤銷此筆錯誤收款",()->deleteReceipt(r));
@@ -782,7 +813,9 @@ public class MainActivity extends Activity {
         if(s==null){action("退租／結算費用",()->settlementForm(lease));return;}
         long held=Deposits.summary(lease.getString("id"),data("deposits")).getLong("held");
         card("已退租 · "+s.getString("date"),"租金與水電原帳單尚欠 $"+s.getLong("invoiceDebt")+"\n另收修繕費 $"+s.getLong("repairs")+" · 其他費用 $"+s.getLong("other")+"\n結算費用合計 $"+s.getLong("total")+"\n押金抵付費用 $"+s.getLong("depositUsed")+"\n尚需補繳 $"+Settlements.due(s)+" · 押金尚待退 $"+held+"\n"+s.getString("note"));
+        LinearLayout sourceBox=card("結算來源","原帳單欠款明細，點開查看。");LinearLayout sourceDetails=form();sourceDetails.setVisibility(View.GONE);sourceBox.addView(sourceDetails);LinearLayout sourceParent=body;body=sourceDetails;
         JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);card("結算原帳單 · "+r.getString("month")+" "+r.getString("kind"),"租金 $"+r.getLong("rent")+" · 水費 $"+r.getLong("water")+" · 電費 $"+r.getLong("electricity")+"\n原合計 $"+r.getLong("total")+" · 結算前已付 $"+r.getLong("paidBefore")+" · 結算時未付 $"+r.getLong("remaining"));}
+        body=sourceParent;cardAction(sourceBox,"展開／收合原帳單",()->sourceDetails.setVisibility(sourceDetails.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
         if(Settlements.due(s)>0)action("＋ 收到結算補繳",()->settlementPaymentForm(lease));
         if(held>0)action("退還剩餘押金",()->depositForm(lease,true));
         action("複製退租結算明細",()->{try{String msg=s.getString("unitCodeSnapshot")+" · "+s.getString("tenantSnapshot")+"\n退租日 "+s.getString("date")+"\n原帳單未付 $"+s.getLong("invoiceDebt")+"\n修繕費 $"+s.getLong("repairs")+" · 其他 $"+s.getLong("other")+"\n結算費用 $"+s.getLong("total")+"\n押金抵付 $"+s.getLong("depositUsed")+"\n尚需補繳 $"+Settlements.due(s)+" · 押金待退 $"+Deposits.summary(lease.getString("id"),data("deposits")).getLong("held")+"\n"+s.getString("note");android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("退租結算",display(msg)));Toast.makeText(this,"結算明細已複製",Toast.LENGTH_SHORT).show();}catch(Exception e){error(e);}});
