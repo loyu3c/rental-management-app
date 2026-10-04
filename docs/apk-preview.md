@@ -1,6 +1,16 @@
 # APK 整合測試版
 
-版本 0.23.0-preview，versionCode=26，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.24.0-preview，versionCode=27，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.24 修改帳戶名稱
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37201742492/artifacts/11302484373)。Release單元測試、編譯、lint及Google契約測試通過，手機操作待驗證。
+
+- 記帳 → 帳戶管理 → 查看帳戶流水與對帳 → 選帳戶 → 修改帳戶名稱。
+- 不可空白或與其他帳戶重名。保存只改名稱，不改期初、餘額或交易關聯。
+- 保存後帳戶清單、流水標題與有帳戶ID的收款顯示目前名稱。舊未對應收款的原文字保留。
+- 實機確認改名後日期與捲動保留，餘額／分配不變；原修正期初入口仍可用。
+- 先匯出完整備份，再解壓縮安裝app-release.apk覆蓋更新。
 
 ## 0.23 撤銷位置及已撤銷風格
 
