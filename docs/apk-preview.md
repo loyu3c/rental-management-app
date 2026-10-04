@@ -1,6 +1,17 @@
 # APK 整合測試版
 
-版本 0.24.0-preview，versionCode=27，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.25.0-preview，versionCode=28，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.25 支出類別管理
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37204853771/artifacts/11303633939)。Android單元測試、Release編譯、lint及Google契約測試通過；實機操作與還原待驗證。
+
+- 記帳 → 更多功能 → 支出類別管理，可新增、改名、停用／啟用。
+- 修繕預設顯示為修繕費用，增加清潔打掃；類別名稱最多40字，不可空白或重複。
+- 固定類別ID供統計與歷史關聯；改名會統一顯示舊紀錄，金額與分攤不變。停用不再提供新增選項，歷史支出與報表保留。
+- 語音支援清潔／打掃及完整自訂類別名稱，多類別時手選，不會直接入帳。
+- 完整備份升為v7，包含自訂類別。舊v1–v6還原補預設類別；新v7備份需使用此版本或更新版本還原。
+- 測試新增、改名後歷史合計、停用後選單、語音辨識與備份還原。更新前先匯出完整備份，再解壓縮安裝app-release.apk。
 
 ## 0.24 修改帳戶名稱
 
