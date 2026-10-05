@@ -1335,7 +1335,7 @@ public class MainActivity extends Activity {
     }
 
     private static final int CAMERA_PHOTO=43, PICK_PHOTO=44;
-    private static final int PICK_CONTRACT=45;
+    private static final int PICK_CONTRACT=48;
     private boolean hasMeterHistory(String leaseId){
         if(hasBilling(leaseId))return true;JSONArray rows=data("meterReadings");for(int i=0;i<rows.length();i++)if(leaseId.equals(rows.optJSONObject(i).optString("leaseId")))return true;return false;
     }
