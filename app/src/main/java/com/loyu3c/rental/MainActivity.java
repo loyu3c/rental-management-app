@@ -474,7 +474,6 @@ public class MainActivity extends Activity {
         EditText initialMeter=number(layout,"起始電度（起租時電表讀數，可稍後補登）");
         final boolean[] attachContract={false};
         TextView contractLabel=text(original==null||original.optString("contractFile").isEmpty()?"PDF 合約：尚未附上": "PDF 合約："+original.optString("contractName","租賃合約.pdf"),14,Color.DKGRAY);layout.addView(contractLabel);
-        Button contractButton=new Button(this);contractButton.setText("儲存後選取 PDF 合約");layout.addView(contractButton);contractButton.setOnClickListener(v->{attachContract[0]=true;contractLabel.setText("請按儲存；儲存成功後選取 PDF 合約（25MB以下）");});
         if(original==null){
             utilities.setSelection(1);water.setText("200");
             start.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence value,int a,int c,int d){}public void onTextChanged(CharSequence value,int a,int before,int count){try{end.setText(LeaseDates.oneYearAfter(value.toString()));}catch(Exception e){end.setText("");}}public void afterTextChanged(Editable value){}});
@@ -492,8 +491,10 @@ public class MainActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this); scroll.addView(layout);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle(unit.optString("code") + "：租約")
-            .setView(scroll).setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
-        dialog.setOnShowListener(v -> dialog.getButton(-1).setOnClickListener(w -> {
+            .setView(scroll).setNeutralButton("儲存並選 PDF",null).setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
+        dialog.setOnShowListener(v -> {
+            dialog.getButton(-3).setOnClickListener(w->{attachContract[0]=true;try{dialog.getButton(-1).performClick();}finally{attachContract[0]=false;}});
+            dialog.getButton(-1).setOnClickListener(w -> {
             String person = tenant.getText().toString().trim(), mail = email.getText().toString().trim();
             if (person.isEmpty()) { tenant.setError("請填姓名"); return; }
             if (!Patterns.EMAIL_ADDRESS.matcher(mail).matches() || !mail.toLowerCase(Locale.ROOT).endsWith("@gmail.com")) {
@@ -530,7 +531,7 @@ public class MainActivity extends Activity {
                 if(original==null)leases.put(lease);else for(int i=0;i<leases.length();i++)if(leases.optJSONObject(i).optString("id").equals(original.optString("id")))leases.put(i,lease);
                 if (save("leases", leases)) { dialog.dismiss(); render();if(attachContract[0])pickContract(lease.optString("id")); }
             } catch (Exception e) { error(e); }
-        })); dialog.show();
+        });}); dialog.show();
     }
 
 
@@ -1102,12 +1103,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("選擇正確的語音文字").setItems(results.toArray(new String[0]),(d,n)->voiceEditor(results.get(n))).setNegativeButton("返回草稿",(d,n)->voiceEditor("")).show();
     }
 
-    private void expenseForm() {
-        new AlertDialog.Builder(this).setTitle("記錄支出／房貸扣款")
-            .setItems(new String[]{"手動填寫支出","🎤 語音輸入支出（先核對草稿）"},(d,n)->{
-                if(n==0)expenseForm(null);else voiceEditor("");
-            }).setNegativeButton("取消",null).show();
-    }
+    private void expenseForm() {expenseForm(null);}
     private void expenseForm(JSONObject draft) {expenseForm(draft,null);}
     private void expenseForm(JSONObject draft,JSONObject original) {
         List<JSONObject> accounts=accountRows();JSONArray properties=data("properties");
