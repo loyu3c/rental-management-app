@@ -16,7 +16,7 @@ public final class LeaseFiles {
     }
     public static String initialReading(JSONObject lease,String month){
         if(!lease.has("initialMeter")||lease.isNull("initialMeter"))return "";
-        try{return YearMonth.parse(month).equals(YearMonth.from(java.time.LocalDate.parse(lease.getString("start"))))?lease.getString("initialMeter"):"";}catch(Exception e){return "";}
+        try{return YearMonth.parse(month).equals(YearMonth.from(java.time.LocalDate.parse(lease.getString("start"))))?Long.toString(lease.getLong("initialMeter")):"";}catch(Exception e){return "";}
     }
     public static void validate(JSONObject backup) throws JSONException {
         files(backup);JSONArray leases=backup.getJSONArray("leases");for(int i=0;i<leases.length();i++){JSONObject lease=leases.getJSONObject(i);if(lease.has("initialMeter")&&!lease.isNull("initialMeter"))Ledger.money(lease,"initialMeter");}
