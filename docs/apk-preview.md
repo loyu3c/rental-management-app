@@ -1,6 +1,16 @@
 # APK 整合測試版
 
-版本 0.28.1-preview，versionCode=32，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.29.0-preview，versionCode=33，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.29 租約預設與延長
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37277501007/artifacts/11330384470)。Release單元測試、編譯、lint與Google契約測試通過；手機表單待驗證。
+
+- 新增租約：選起租日後，到期日預設加一年，可手動改；重選起租日則重新帶入。2月29日加一年為下一年2月28日。
+- 新增預設管理者代收水電、固定月水費200元；編輯原租約保留已有設定。
+- 同一租客、原租金與押金條件不變：可修改原租約到期日延長。已有帳務不能縮短、不能直接改起租日／租金／押金／週期；已退租仍不可延長。租期重疊阻擋保留。
+- 原帳單与收款不改，後續新開單及到期提醒依新到期日。租金或押金調整流程尚未開放，換租客需退租結算後另開租約。
+- 更新前匯出完整備份，再解壓安裝app-release.apk。請測試日期預設、原租約水電設定、同租客延長及舊帳務保留。
 
 ## 0.28.1 支出卡片排列
 
