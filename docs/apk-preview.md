@@ -1,6 +1,15 @@
 # APK 整合測試版
 
-版本 0.29.0-preview，versionCode=33，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+版本 0.30.0-preview，versionCode=34，applicationId=com.loyu3c.rental.preview。固定簽署沿用既有 GitHub Secrets。
+
+## 0.30 出租燈號與總數
+
+[下載固定簽署 APK ZIP](https://github.com/loyu3c/rental-management-app/actions/runs/37284557199/artifacts/11334086230)。Release單元測試、編譯、lint及Google契約測試通過；手機排版待驗證。
+
+- 不動產總表上方顯示全部出租概況，各棟卡片顯示綠燈出租中數、灰燈未出租數；單棟上方也有總計。
+- 出租單位卡片：綠燈出租中、灰燈未出租，保留目前租客；待起租與到期歸未出租，另顯示原狀態。新增未出租篩選。
+- 依當日有效租約與全部已建檔單位計數，不隨搜尋條件變動；沒有單位的物件顯示0/0。整棟涵蓋房間，獨立車格／土地不沿用整棟狀態。
+- 更新前匯出完整備份，再解壓安裝app-release.apk。請核對全部／各棟合計、未出租篩選與保存租約後刷新。
 
 ## 0.29 租約預設與延長
 
