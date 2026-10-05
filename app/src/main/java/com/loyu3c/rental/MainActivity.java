@@ -344,8 +344,10 @@ public class MainActivity extends Activity {
         for(int i=0;i<leases.length();i++)if(unit.optString("id").equals(leases.optJSONObject(i).optString("unitId")))rows.add(leases.optJSONObject(i));
         rows.sort((x,y)->y.optString("start").compareTo(x.optString("start")));
         for(JSONObject l:rows) {
-            card(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+(l.has("terminatedOn")?"\n已退租："+l.optString("terminatedOn"):"")+"\n月租 $"+l.optLong("rent")+" · "+l.optString("cycle")+"\n約定押金 $"+l.optLong("deposit")+"（約定金額；實收看押金明細）\n"+l.optString("email")+"\n"+l.optString("utilities")+(l.optString("utilities").equals("管理者代收水電")?(l.isNull("water")?" · 水費待設定":" · 月水費 $"+l.optLong("water")):""));
+            card(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+(l.has("initialMeter")&&!l.isNull("initialMeter")?"\n起始電度："+fmt(l.optLong("initialMeter")):"\n起始電度：尚未設定")+(l.has("terminatedOn")?"\n已退租："+l.optString("terminatedOn"):"")+"\n月租 $"+l.optLong("rent")+" · "+l.optString("cycle")+"\n約定押金 $"+l.optLong("deposit")+"（約定金額；實收看押金明細）\n"+l.optString("email")+"\n"+l.optString("utilities")+(l.optString("utilities").equals("管理者代收水電")?(l.isNull("water")?" · 水費待設定":" · 月水費 $"+l.optLong("water")):""));
             if(!l.has("terminatedOn"))action("修改 "+l.optString("tenant")+" 的租約",()->leaseForm(unit,l));
+            action(l.optString("contractFile").isEmpty()?"上傳 PDF 合約":"更換 PDF 合約",()->pickContract(l.optString("id")));
+            if(!l.optString("contractFile").isEmpty())action("開啟 PDF 合約",()->viewContract(l));
             action("查看帳單與收款",()->leaseLedger(l));
         }
     }
@@ -469,11 +471,16 @@ public class MainActivity extends Activity {
         Spinner utilities = choice(layout, new String[]{"租客自行繳水電", "管理者代收水電"});
         EditText water = number(layout, "代收固定月水費，可留空待設定");
         EditText rate = number(layout, "每度電費（只套用新開水電帳單）");rate.setText("5");
+        EditText initialMeter=number(layout,"起始電度（起租時電表讀數，可稍後補登）");
+        final boolean[] attachContract={false};
+        TextView contractLabel=text(original==null||original.optString("contractFile").isEmpty()?"PDF 合約：尚未附上": "PDF 合約："+original.optString("contractName","租賃合約.pdf"),14,Color.DKGRAY);layout.addView(contractLabel);
+        Button contractButton=new Button(this);contractButton.setText("儲存後選取 PDF 合約");layout.addView(contractButton);contractButton.setOnClickListener(v->{attachContract[0]=true;contractLabel.setText("請按儲存；儲存成功後選取 PDF 合約（25MB以下）");});
         if(original==null){
             utilities.setSelection(1);water.setText("200");
             start.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence value,int a,int c,int d){}public void onTextChanged(CharSequence value,int a,int before,int count){try{end.setText(LeaseDates.oneYearAfter(value.toString()));}catch(Exception e){end.setText("");}}public void afterTextChanged(Editable value){}});
         }
         if(original!=null) {
+            if(original.has("initialMeter")&&!original.isNull("initialMeter"))initialMeter.setText(original.optString("initialMeter"));if(hasMeterHistory(original.optString("id"))&&original.has("initialMeter")&&!original.isNull("initialMeter")){initialMeter.setEnabled(false);layout.addView(text("已有抄表或帳單，起始電度保留原紀錄；讀數修正請使用抄表流程。",14,Color.DKGRAY));}
             tenant.setText(original.optString("tenant"));email.setText(original.optString("email"));start.setText(original.optString("start"));end.setText(original.optString("end"));
             rent.setText(original.optString("rent"));day.setText(original.optString("dueDay"));deposit.setText(original.optString("deposit"));
             cycle.setSelection(original.optString("cycle").equals("年繳")?1:0);utilities.setSelection(original.optString("utilities").equals("管理者代收水電")?1:0);
@@ -496,8 +503,8 @@ public class MainActivity extends Activity {
             try { from = LocalDate.parse(dateValue(start)); to = LocalDate.parse(dateValue(end));
                 if (to.isBefore(from)) throw fieldError(end,"到期日不得早於起租日");
             } catch (Exception e) { error(e); return; }
-            long monthly, due, held, waterAmount, electricRate;
-            try { monthly = amount(rent, false); due = amount(day, false); held = amount(deposit, false); waterAmount = amount(water, true); electricRate=amount(rate,false);
+            long monthly, due, held, waterAmount, electricRate, initialReading;
+            try { monthly = amount(rent, false); due = amount(day, false); held = amount(deposit, false); waterAmount = amount(water, true); electricRate=amount(rate,false);initialReading=amount(initialMeter,true);
                 if(monthly<=0)throw fieldError(rent,"月租金須大於0");if(due<1||due>31)throw fieldError(day,"每月應繳日須介於1與31之間");
             } catch (Exception e) { error(e); return; }
             JSONArray leases = data("leases"), units = data("units");
@@ -517,11 +524,11 @@ public class MainActivity extends Activity {
                 lease.put("unitCodeSnapshot", unit.optString("code")); lease.put("tenant", person); lease.put("email", mail);
                 lease.put("start", from.toString()); lease.put("end", to.toString()); lease.put("rent", monthly);
                 lease.put("dueDay", due); lease.put("cycle", cycle.getSelectedItem().toString()); lease.put("deposit", held);
-                lease.put("utilities", utilities.getSelectedItem().toString()); lease.put("electricRate", electricRate);
+                lease.put("utilities", utilities.getSelectedItem().toString()); lease.put("electricRate", electricRate);lease.put("initialMeter",initialReading<0?JSONObject.NULL:initialReading);
                 lease.put("water", utilities.getSelectedItemPosition() == 0 || waterAmount == -1 ? JSONObject.NULL : waterAmount);
                 if(original!=null){JSONObject latest=find("leases",original.optString("id"));if(latest==null||!latest.toString().equals(original.toString()))throw new IllegalArgumentException("租約已變更，請重新開啟修改");if(hasBilling(original.optString("id")))LeaseDates.validateBilledEdit(original,lease);}
                 if(original==null)leases.put(lease);else for(int i=0;i<leases.length();i++)if(leases.optJSONObject(i).optString("id").equals(original.optString("id")))leases.put(i,lease);
-                if (save("leases", leases)) { dialog.dismiss(); render(); }
+                if (save("leases", leases)) { dialog.dismiss(); render();if(attachContract[0])pickContract(lease.optString("id")); }
             } catch (Exception e) { error(e); }
         })); dialog.show();
     }
@@ -735,8 +742,8 @@ public class MainActivity extends Activity {
                 water.setText(u!=null?u.optString("water"):lease.isNull("water")?"":lease.optString("water"));
                 JSONObject reading=MeterReadings.latest(data("meterReadings"),lease.optString("id"),ym.toString());
                 JSONObject previousPeriod=MeterReadings.previousPeriod(data("meterReadings"),invoices,lease.optString("id"),ym.toString());
-                prior.setText(u!=null?u.optString("previous"):reading!=null?reading.optString("previous"):previousPeriod==null?"":previousPeriod.optString("current"));current.setText(u!=null?u.optString("current"):reading==null?"":reading.optString("current"));
-                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數"+(reading!=null?" · 已帶入抄表日期 "+reading.optString("date"):previousPeriod==null?" · 上期讀數請自行填寫":" · 上期讀數帶入 "+previousPeriod.optString("month")+" "+previousPeriod.optString("source")));
+                prior.setText(u!=null?u.optString("previous"):reading!=null?reading.optString("previous"):previousPeriod==null?LeaseFiles.initialReading(lease,ym.toString()):previousPeriod.optString("current"));current.setText(u!=null?u.optString("current"):reading==null?"":reading.optString("current"));
+                rateLabel.setText(u!=null?"水電帳單已建立，沿用原讀數與每度 $"+u.optLong("rate"):"每度 $"+lease.optLong("electricRate",5)+"；跨租客不自動沿用讀數"+(reading!=null?" · 已帶入抄表日期 "+reading.optString("date"):previousPeriod==null?(LeaseFiles.initialReading(lease,ym.toString()).isEmpty()?" · 上期讀數請自行填寫":" · 已帶入租約起始電度"):" · 上期讀數帶入 "+previousPeriod.optString("month")+" "+previousPeriod.optString("source")));
             }catch(Exception ignored){}finally{refreshing[0]=false;}update.run();
         };
         TextWatcher totals=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){update.run();}public void afterTextChanged(Editable e){}};
@@ -902,7 +909,7 @@ public class MainActivity extends Activity {
         layout.addView(text("最後一期租金自行填寫，水電沿用原帳單；尚未開立的部分會一起建立。修繕／其他費用是向租客收取，不是付給師傅的支出。",14,Color.DKGRAY));
         EditText rent=number(layout,"最後一期租金"),water=number(layout,"最後一期水費"),prior=number(layout,"上期電表讀數"),current=number(layout,"最後電表讀數"),repairs=number(layout,"向租客收修繕費"),other=number(layout,"其他結算費用"),note=field(layout,"結算說明／費用明細");
         repairs.setText("0");other.setText("0");boolean collect=lease.optString("utilities").equals("管理者代收水電");
-        Runnable load=()->{try{YearMonth ym=YearMonth.from(LocalDate.parse(dateValue(date)));JSONObject r=Ledger.forMonth(data("invoices"),lease.optString("id"),ym,"租金"),u=Ledger.forMonth(data("invoices"),lease.optString("id"),ym,"水電");rent.setEnabled(r==null);rent.setText(r==null?lease.optString("rent"):r.optString("rent"));boolean edit=collect&&u==null;for(EditText f:new EditText[]{water,prior,current})f.setEnabled(edit);water.setText(u!=null?u.optString("water"):collect?(lease.isNull("water")?"":lease.optString("water")):"0");prior.setText(u!=null?u.optString("previous"):collect?"":"0");current.setText(u!=null?u.optString("current"):collect?"":"0");}catch(Exception ignored){}};
+        Runnable load=()->{try{YearMonth ym=YearMonth.from(LocalDate.parse(dateValue(date)));JSONObject r=Ledger.forMonth(data("invoices"),lease.optString("id"),ym,"租金"),u=Ledger.forMonth(data("invoices"),lease.optString("id"),ym,"水電");rent.setEnabled(r==null);rent.setText(r==null?lease.optString("rent"):r.optString("rent"));boolean edit=collect&&u==null;for(EditText f:new EditText[]{water,prior,current})f.setEnabled(edit);water.setText(u!=null?u.optString("water"):collect?(lease.isNull("water")?"":lease.optString("water")):"0");prior.setText(u!=null?u.optString("previous"):collect?LeaseFiles.initialReading(lease,ym.toString()):"0");current.setText(u!=null?u.optString("current"):collect?"":"0");}catch(Exception ignored){}};
         date.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){load.run();}public void afterTextChanged(Editable e){}});load.run();
         layout.addView(text("既有月份金額鎖定並沿用；自行繳水電的租約不代收。確認結算後保留並鎖定原帳務，不自動退款。請先備份並核對，這版尚不提供取消已確認結算。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("退租結算費用").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽結算",null).create();
@@ -924,7 +931,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject fullBackup() throws JSONException {
-        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",8);for(String key:KEYS)backup.put(key,data(key));return backup;
+        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",9);for(String key:KEYS)backup.put(key,data(key));return backup;
     }
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
@@ -1328,6 +1335,29 @@ public class MainActivity extends Activity {
     }
 
     private static final int CAMERA_PHOTO=43, PICK_PHOTO=44;
+    private static final int PICK_CONTRACT=45;
+    private boolean hasMeterHistory(String leaseId){
+        if(hasBilling(leaseId))return true;JSONArray rows=data("meterReadings");for(int i=0;i<rows.length();i++)if(leaseId.equals(rows.optJSONObject(i).optString("leaseId")))return true;return false;
+    }
+    private void pickContract(String leaseId){
+        if(!getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingContractLease",leaseId).commit()){error(new IllegalArgumentException("無法準備合約上傳"));return;}
+        try{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(pick,PICK_CONTRACT);}catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingContractLease").commit();error(new IllegalArgumentException("無法開啟PDF檔案選擇器"));}
+    }
+    private void validateContractPdf(File file) throws Exception {
+        LeaseFiles.validatePdf(file);try(android.os.ParcelFileDescriptor descriptor=android.os.ParcelFileDescriptor.open(file,android.os.ParcelFileDescriptor.MODE_READ_ONLY);android.graphics.pdf.PdfRenderer pdf=new android.graphics.pdf.PdfRenderer(descriptor)){if(pdf.getPageCount()<1)throw new IOException("PDF合約沒有頁面");}
+    }
+    private void viewContract(JSONObject lease){
+        try{String name=lease.getString("contractFile");if(!LeaseFiles.pdfName(name))throw new IOException();LeaseFiles.validatePdf(new File(photoDir(),name));startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(name),"application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));}catch(Exception e){error(new IllegalArgumentException("無法開啟合約，請確認PDF檔案及手機PDF閱讀程式"));}
+    }
+    private void contractResult(int result,Intent intent){
+        String leaseId=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingContractLease","");getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingContractLease").commit();if(result!=RESULT_OK||intent==null||intent.getData()==null)return;
+        JSONObject lease=find("leases",leaseId);if(lease==null){error(new IllegalArgumentException("找不到合約所屬租約，請重新選取"));return;}final String snapshot=lease.toString();Uri uri=intent.getData();String filename="租賃合約.pdf";
+        try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())filename=cursor.getString(0);}catch(Exception ignored){}
+        final String displayName=filename==null?"租賃合約.pdf":filename;File file=new File(photoDir(),UUID.randomUUID()+".pdf");AlertDialog progress=busy("正在保存PDF合約…");new Thread(()->{try{
+            try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(file)){if(in==null)throw new IOException();byte[] buffer=new byte[8192];long total=0;int n;while((n=in.read(buffer))!=-1){total+=n;if(total>BackupArchive.PHOTO_LIMIT)throw new IOException("PDF超過25MB");out.write(buffer,0,n);}}
+            validateContractPdf(file);runOnUiThread(()->{progress.dismiss();try{JSONObject latest=find("leases",leaseId);if(latest==null||!latest.toString().equals(snapshot))throw new IllegalArgumentException("租約已變更，請重新上傳合約");JSONArray next=data("leases");for(int i=0;i<next.length();i++)if(leaseId.equals(next.getJSONObject(i).getString("id"))){next.getJSONObject(i).put("contractFile",file.getName()).put("contractName",displayName);break;}if(!saveChecked("leases",next)){file.delete();return;}render();refreshPanels();Toast.makeText(this,"PDF合約已保存到手機",Toast.LENGTH_LONG).show();}catch(Exception e){file.delete();error(e);}});
+        }catch(Exception e){file.delete();runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("合約保存失敗：請選取可開啟、未加密且25MB以下的PDF"));});}}).start();
+    }
     private File photoDir() {File dir=new File(getFilesDir(),"meter-photos");if(!dir.isDirectory())dir.mkdirs();return dir;}
     private Uri photoUri(String file) {return new Uri.Builder().scheme("content").authority(getPackageName()+".photos").appendPath(file).build();}
     private void meterPanel(JSONObject lease) {
@@ -1347,7 +1377,7 @@ public class MainActivity extends Activity {
     private void meterForm(JSONObject lease) {
         LinearLayout layout=form();EditText month=dateField(layout,"用電帳單月份",true),date=dateField(layout,"實際抄表日期",false),prior=number(layout,"上期／起始電表讀數"),current=number(layout,"本期電表讀數"),note=field(layout,"抄表備註");month.setText(YearMonth.from(today()).toString());
         TextView origin=text("",14,Color.rgb(137,83,15));layout.addView(origin);
-        Runnable loadPrevious=()->{try{JSONObject previous=MeterReadings.previousPeriod(data("meterReadings"),data("invoices"),lease.optString("id"),dateValue(month));prior.setText(previous==null?"":previous.optString("current"));current.setText("");origin.setText(previous==null?"上一個月份沒有紀錄，請自行填上期讀數。":"已帶入 "+previous.optString("month")+" "+previous.optString("source")+" 的本期讀數；可自行修正。");}catch(Exception e){origin.setText("請先選擇用電帳單月份。");}};
+        Runnable loadPrevious=()->{try{JSONObject previous=MeterReadings.previousPeriod(data("meterReadings"),data("invoices"),lease.optString("id"),dateValue(month));prior.setText(previous==null?LeaseFiles.initialReading(lease,dateValue(month)):previous.optString("current"));current.setText("");origin.setText(previous==null?(LeaseFiles.initialReading(lease,dateValue(month)).isEmpty()?"上一個月份沒有紀錄，請自行填上期讀數。":"已帶入租約起始電度；請核對。"):"已帶入 "+previous.optString("month")+" "+previous.optString("source")+" 的本期讀數；可自行修正。");}catch(Exception e){origin.setText("請先選擇用電帳單月份。");}};
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){loadPrevious.run();}public void afterTextChanged(Editable e){}});loadPrevious.run();
         layout.addView(text("照片是讀數依據。同一租約只帶入上一個月份，不沿用其他租客。缺月份或換表請自行確認起始讀數。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("新增抄表紀錄").setView(scroll).setNegativeButton("取消",null).setNeutralButton("只存讀數",null).setPositiveButton("附上照片",null).create();
@@ -1391,21 +1421,22 @@ public class MainActivity extends Activity {
     private AlertDialog busy(String message) {AlertDialog d=new AlertDialog.Builder(this).setMessage(message).setCancelable(false).create();d.show();return d;}
     private void exportArchive(Uri uri) {
         String raw=pendingBackup;if(raw==null)raw=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingBackup",null);if(raw==null){error(new IllegalArgumentException("備份快照遺失，請重新匯出"));return;}
-        final String snapshot=raw;AlertDialog progress=busy("正在匯出帳務與照片，請稍候…");new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException();BackupArchive.write(out,new JSONObject(snapshot),photoDir());runOnUiThread(()->{progress.dismiss();pendingBackup=null;getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingBackup").commit();Toast.makeText(this,"完整ZIP備份已匯出，包含照片與帳務",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份匯出失敗："+e.getMessage()+"；請刪除未完成檔案並重新匯出"));});}}).start();
+        final String snapshot=raw;AlertDialog progress=busy("正在匯出帳務、合約與照片，請稍候…");new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException();BackupArchive.write(out,new JSONObject(snapshot),photoDir());runOnUiThread(()->{progress.dismiss();pendingBackup=null;getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingBackup").commit();Toast.makeText(this,"完整ZIP備份已匯出，包含照片、PDF合約與帳務",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份匯出失敗："+e.getMessage()+"；請刪除未完成檔案並重新匯出"));});}}).start();
     }
     private void readArchive(Uri uri) {
-        File staging=new File(getCacheDir(),"restore-"+UUID.randomUUID());AlertDialog progress=busy("正在檢查備份與照片…");new Thread(()->{try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException();JSONObject backup=BackupArchive.read(in,staging);validateBackup(backup);for(String file:MeterReadings.files(backup.getJSONArray("meterReadings")))photoPreview(new File(staging,file)).recycle();
-            runOnUiThread(()->{progress.dismiss();new AlertDialog.Builder(this).setMessage("已驗證備份與照片。確定替換全部資料？舊v1–v5沒有抄表紀錄／照片；v1–v3沒有押金收付；v1–v4沒有退租結算。請保留目前的完整備份。").setNegativeButton("取消",(d,w)->clearStaging(staging)).setOnCancelListener(d->clearStaging(staging)).setPositiveButton("確認還原",(d,w)->restoreArchive(backup,staging)).show();});
+        File staging=new File(getCacheDir(),"restore-"+UUID.randomUUID());AlertDialog progress=busy("正在檢查備份與照片…");new Thread(()->{try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException();JSONObject backup=BackupArchive.read(in,staging);validateBackup(backup);for(String file:LeaseFiles.files(backup))validateContractPdf(new File(staging,file));for(String file:MeterReadings.files(backup.getJSONArray("meterReadings")))photoPreview(new File(staging,file)).recycle();
+            runOnUiThread(()->{progress.dismiss();new AlertDialog.Builder(this).setMessage("已驗證備份、合約與照片。確定替換全部資料？舊v1–v5沒有抄表紀錄／照片；v1–v3沒有押金收付；v1–v4沒有退租結算。請保留目前的完整備份。").setNegativeButton("取消",(d,w)->clearStaging(staging)).setOnCancelListener(d->clearStaging(staging)).setPositiveButton("確認還原",(d,w)->restoreArchive(backup,staging)).show();});
         }catch(Exception e){clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份無效或照片缺少："+e.getMessage()+"；原資料未替換"));});}}).start();
     }
     private void restoreArchive(JSONObject backup,File staging) {
         AlertDialog progress=busy("正在還原帳務與照片…");new Thread(()->{List<File> added=new ArrayList<>();boolean committed=false;try{
             JSONArray rows=backup.getJSONArray("meterReadings");for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);String old=row.getString("file");if(old.isEmpty())continue;String name=UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("照片還原失敗");added.add(destination);row.put("file",name);}
+            JSONArray contractLeases=backup.getJSONArray("leases");for(int i=0;i<contractLeases.length();i++){JSONObject lease=contractLeases.getJSONObject(i);String old=lease.optString("contractFile");if(old.isEmpty())continue;String name=UUID.randomUUID()+".pdf";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("PDF合約還原失敗");added.add(destination);lease.put("contractFile",name);}
             validateBackup(backup);android.content.SharedPreferences.Editor editor=getSharedPreferences("catalog",MODE_PRIVATE).edit();for(String key:KEYS)editor.putString(key,backup.getJSONArray(key).toString());if(!editor.commit())throw new IOException("帳務保存失敗");committed=true;clearStaging(staging);runOnUiThread(()->{progress.dismiss();propertyId="";unitId="";render();body.post(this::refreshPanels);Toast.makeText(this,"資料與照片已還原",Toast.LENGTH_LONG).show();});
         }catch(Exception e){if(!committed)for(File file:added)file.delete();clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("還原失敗："+e.getMessage()));});}}).start();
     }
     private void validateBackup(JSONObject backup) throws Exception {
-        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 8))
+        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 9))
             throw new IllegalArgumentException();
         if(backup.getInt("version")==1) {backup.put("invoices",new JSONArray());backup.put("receipts",new JSONArray());}
         if(backup.getInt("version")<3)for(String key:new String[]{"accounts","expenses","transfers","reconciliations"})backup.put(key,new JSONArray());
@@ -1413,6 +1444,7 @@ public class MainActivity extends Activity {
         if(backup.getInt("version")<5)backup.put("settlements",new JSONArray());
         if(backup.getInt("version")<6)backup.put("meterReadings",new JSONArray());
         if(backup.getInt("version")<7)backup.put("expenseCategories",ExpenseCategories.defaults());
+        LeaseFiles.validate(backup);
         java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
         java.util.Set<String> codes = new java.util.HashSet<>();
         JSONArray p = backup.getJSONArray("properties"), u = backup.getJSONArray("units"), l = backup.getJSONArray("leases");
@@ -1459,6 +1491,7 @@ public class MainActivity extends Activity {
         if(request==EXPORT_WORKBOOK){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerWorkbook(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingWorkbook").commit();return;}
         if(request==EXPORT_REPORT){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerReport(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingReport").commit();return;}
         if(request==VOICE_INPUT){voiceResult(result,intent);return;}
+        if(request==PICK_CONTRACT){contractResult(result,intent);return;}
         if(request==CAMERA_PHOTO||request==PICK_PHOTO){photoResult(request,result,intent);return;}
         if(result!=RESULT_OK||intent==null||intent.getData()==null)return;
         if(request==EXPORT)exportArchive(intent.getData());else if(request==IMPORT)readArchive(intent.getData());
