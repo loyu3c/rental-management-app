@@ -287,59 +287,45 @@ public class MainActivity extends Activity {
         }
         return Integer.compare(a.length(),b.length());
     }
-    private String status(JSONObject unit) {
-        boolean future=false,history=false;JSONArray leases=data("leases"),units=data("units");
-        for(int i=0;i<leases.length();i++) {
-            JSONObject l=leases.optJSONObject(i),other=null;
-            for(int j=0;j<units.length();j++) if(units.optJSONObject(j).optString("id").equals(l.optString("unitId")))other=units.optJSONObject(j);
-            boolean whole=other!=null&&other.optString("propertyId").equals(unit.optString("propertyId"))&&other.optString("type").equals("整棟");
-            if(!l.optString("unitId").equals(unit.optString("id"))&&!whole)continue;
-            LocalDate from=LocalDate.parse(l.optString("start")),to=LocalDate.parse(l.optString("terminatedOn",l.optString("end")));
-            if(!today().isBefore(from)&&!today().isAfter(to))return whole&&!other.optString("id").equals(unit.optString("id"))?"出租中（整棟租約）":"出租中";
-            if(from.isAfter(today()))future=true;else history=true;
-        }
-        return future?"待起租":history?"租約已到期":"未建租約";
+    private String status(JSONObject unit) {return Occupancy.status(data("units"),data("leases"),unit,today());}
+    private String currentTenant(JSONObject unit) {JSONObject lease=Occupancy.current(data("units"),data("leases"),unit,today());return lease==null?"":lease.optString("tenant");}
+    private void occupancySummary(LinearLayout box,String property){
+        int[] counts=Occupancy.counts(data("units"),data("leases"),property,today());LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(6),0,0);row.addView(occupancyLabel("出租中 "+fmt(counts[0]),true),new LinearLayout.LayoutParams(0,-2,1));row.addView(occupancyLabel("未出租 "+fmt(counts[1]),false),new LinearLayout.LayoutParams(0,-2,1));box.addView(row);
     }
-    private String currentTenant(JSONObject unit) {
-        JSONArray leases=data("leases"),units=data("units");
-        for(int i=0;i<leases.length();i++) {
-            JSONObject lease=leases.optJSONObject(i),leasedUnit=null;
-            for(int j=0;j<units.length();j++)if(units.optJSONObject(j).optString("id").equals(lease.optString("unitId")))leasedUnit=units.optJSONObject(j);
-            boolean same=unit.optString("id").equals(lease.optString("unitId"));
-            boolean whole=leasedUnit!=null&&leasedUnit.optString("propertyId").equals(unit.optString("propertyId"))&&leasedUnit.optString("type").equals("整棟");
-            if(!same&&!whole)continue;
-            LocalDate start=LocalDate.parse(lease.optString("start")),end=LocalDate.parse(lease.optString("terminatedOn",lease.optString("end")));
-            if(!today().isBefore(start)&&!today().isAfter(end))return lease.optString("tenant");
-        }
-        return "";
+    private LinearLayout occupancyLabel(String label,boolean active){
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);View dot=new View(this);GradientDrawable circle=new GradientDrawable();circle.setShape(GradientDrawable.OVAL);circle.setColor(active?Color.rgb(54,132,91):Color.rgb(157,158,154));dot.setBackground(circle);LinearLayout.LayoutParams dotParams=new LinearLayout.LayoutParams(dp(10),dp(10));dotParams.rightMargin=dp(6);row.addView(dot,dotParams);row.addView(text(label,14,active?Color.rgb(54,112,78):Color.rgb(112,112,106)));row.setContentDescription(label);return row;
+    }
+    private void unitOccupancyCard(JSONObject unit){
+        String st=status(unit);boolean active=st.startsWith("出租中");LinearLayout box=card(unit.optString("code")+"  ›",unit.optString("type")+"\n"+tenantLabel(unit));LinearLayout badge=occupancyLabel(active?st:"未出租"+(st.equals("未建租約")?"":" · "+st),active);box.addView(badge,1);box.setClickable(true);box.setFocusable(true);box.setForeground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),null,new android.graphics.drawable.ColorDrawable(Color.WHITE)));box.setOnClickListener(v->openUnit(unit));box.setContentDescription(unit.optString("code")+"，"+(active?"出租中":"未出租")+"，"+tenantLabel(unit));
     }
     private String tenantLabel(JSONObject unit) {String tenant=currentTenant(unit);return tenant.isEmpty()?"目前無租客":"目前租客："+tenant;}
     private void propertyScreen() {
         JSONObject property=find("properties",propertyId),unit=find("units",unitId);
         if(property==null) {propertyId="";unitId="";primaryAction("＋ 新增不動產",this::addProperty);
             JSONArray properties=data("properties"),units=data("units");
+            LinearLayout overview=card("出租概況","依今天有效租約、已建檔出租單位計數；待起租與到期單位歸入未出租。");occupancySummary(overview,null);
             if(properties.length()==0)card("尚未建檔","先新增建築物或土地，再建立房間、車格或土地出租範圍。");
             for(int i=0;i<properties.length();i++) {JSONObject p=properties.optJSONObject(i);int count=0;for(int j=0;j<units.length();j++)if(p.optString("id").equals(units.optJSONObject(j).optString("propertyId")))count++;
-                tapCard(p.optString("name"),p.optString("type")+" · "+count+" 個出租單位",()->{propertyId=p.optString("id");render();});}
+                LinearLayout propertyBox=card(p.optString("name")+"  ›",p.optString("type")+" · "+fmt(count)+" 個出租單位");occupancySummary(propertyBox,p.optString("id"));propertyBox.setClickable(true);propertyBox.setFocusable(true);propertyBox.setForeground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),null,new android.graphics.drawable.ColorDrawable(Color.WHITE)));propertyBox.setOnClickListener(v->{propertyId=p.optString("id");render();});}
             return;
         }
         action("‹ 所有不動產",()->{propertyId="";unitId="";render();});
         if(unit!=null&&unit.optString("propertyId").equals(propertyId)) { unitScreen(property,unit);return; }
-        unitId="";card(property.optString("name"),property.optString("type"));
+        unitId="";LinearLayout propertyOverview=card(property.optString("name"),property.optString("type")+" · 全部出租單位");occupancySummary(propertyOverview,propertyId);
         action("修改不動產名稱",()->editName("properties",property,"name","不動產名稱"));
         primaryAction("＋ 新增出租單位",()->addUnit(propertyId,property.optString("name")));
         EditText search=field(body,"搜尋代號或租客姓名");
-        Spinner filter=choice(body,new String[]{"全部","出租中","待起租","租約已到期","未建租約"});
+        Spinner filter=choice(body,new String[]{"全部","出租中","未出租","待起租","租約已到期","未建租約"});
         Spinner sort=choice(body,new String[]{"代號由小到大","代號由大到小"});
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
             list.removeAllViews();List<JSONObject> rows=new ArrayList<>();JSONArray units=data("units");
             for(int i=0;i<units.length();i++) {JSONObject u=units.optJSONObject(i);String st=status(u);
                 if(!propertyId.equals(u.optString("propertyId"))||!(u.optString("code")+" "+currentTenant(u)).toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
-                if(filter.getSelectedItemPosition()>0&&!st.startsWith(filter.getSelectedItem().toString()))continue;rows.add(u);}
+                if(filter.getSelectedItemPosition()>0){String selected=filter.getSelectedItem().toString();if(selected.equals("未出租")?st.startsWith("出租中"):!st.startsWith(selected))continue;}rows.add(u);}
             rows.sort((x,y)->natural(x.optString("code"),y.optString("code"))*(sort.getSelectedItemPosition()==0?1:-1));
             LinearLayout previous=body;body=list;
-            for(JSONObject u:rows)tapCard(u.optString("code"),u.optString("type")+" · "+status(u)+"\n"+tenantLabel(u),()->openUnit(u));
+            for(JSONObject u:rows)unitOccupancyCard(u);
             if(rows.isEmpty())card("沒有符合的單位","可調整搜尋或篩選條件。");body=previous;
         };
         search.addTextChangedListener(new TextWatcher(){ public void beforeTextChanged(CharSequence s,int st,int c,int a){} public void onTextChanged(CharSequence s,int st,int b,int c){refresh.run();}public void afterTextChanged(Editable e){} });
