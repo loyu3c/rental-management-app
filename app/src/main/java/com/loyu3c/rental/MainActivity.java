@@ -989,16 +989,18 @@ public class MainActivity extends Activity {
     private String categoryName(String id){return ExpenseCategories.name(data("expenseCategories"),id);}
     private void expenseCard(JSONObject row) throws JSONException {
         LinearLayout box=card("","");box.removeAllViews();
-        TextView title=text(row.getString("date")+" · "+row.getString("description"),18,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);box.addView(title);
+        TextView title=text(row.getString("date")+" · "+row.getString("description"),18,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);
+        LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.TOP);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        if(!row.optBoolean("void")){
+            Button more=styledButton("⋯",false,false);more.setTextSize(24);more.setMinWidth(0);more.setMinimumWidth(0);more.setPadding(0,0,0,0);more.setContentDescription("此筆支出的更多操作：修改或撤銷");
+            more.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));
+            heading.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{PopupMenu menu=new PopupMenu(this,more);menu.getMenu().add(0,1,0,"修改");menu.getMenu().add(0,2,1,"撤銷");menu.setOnMenuItemClickListener(item->{JSONObject current=find("expenses",row.optString("id"));if(current==null||current.optBoolean("void")){Toast.makeText(this,"此筆紀錄已變更，請重新查看",Toast.LENGTH_SHORT).show();render();return true;}if(item.getItemId()==1)editExpense(current);else if(item.getItemId()==2)voidMovement("expenses",current);return true;});menu.show();});
+        }
+        box.addView(heading,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout content=new LinearLayout(this);content.setGravity(Gravity.CENTER_VERTICAL);LinearLayout left=new LinearLayout(this);left.setOrientation(LinearLayout.VERTICAL);left.setPadding(0,dp(6),dp(10),0);content.addView(left,new LinearLayout.LayoutParams(0,-2,1));
         TextView money=text("金額：$"+fmt(row.getLong("amount")),18,Color.rgb(90,61,37));money.setTypeface(null,Typeface.BOLD);left.addView(money);
         left.addView(text("分類："+categoryName(row.getString("category"))+"\n付款帳戶："+accountName(row.getString("accountId")),14,Color.rgb(112,105,92)));
         if(row.has("history")){Button history=styledButton("修改紀錄 · "+row.getJSONArray("history").length()+" 次",false,false);history.setTextSize(12);history.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);history.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));history.setOnClickListener(v->expenseHistory(row.optString("id")));left.addView(history,new LinearLayout.LayoutParams(-1,-2));}
-        if(!row.optBoolean("void")){
-            LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.VERTICAL);actions.setGravity(Gravity.END);content.addView(actions,new LinearLayout.LayoutParams(-2,-2));
-            Button edit=styledButton("修改",false,false);edit.setTextSize(13);edit.setPadding(dp(12),dp(8),dp(12),dp(8));edit.setMinimumWidth(dp(64));edit.setOnClickListener(v->editExpense(row));actions.addView(edit,new LinearLayout.LayoutParams(-2,-2));
-            Button cancel=styledButton("撤銷",false,true);cancel.setTextSize(13);cancel.setPadding(dp(12),dp(8),dp(12),dp(8));cancel.setMinimumWidth(dp(64));cancel.setOnClickListener(v->voidMovement("expenses",row));LinearLayout.LayoutParams cancelParams=new LinearLayout.LayoutParams(-2,-2);cancelParams.topMargin=dp(4);actions.addView(cancel,cancelParams);
-        }
         box.addView(content,new LinearLayout.LayoutParams(-1,-2));
         JSONArray splits=row.getJSONArray("splits");Button toggle=styledButton("分攤明細 · "+splits.length()+" 個不動產  ▾",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout details=new LinearLayout(this);details.setOrientation(LinearLayout.VERTICAL);details.setVisibility(View.GONE);for(int i=0;i<splits.length();i++){JSONObject split=splits.getJSONObject(i);details.addView(text(propertyName(split.getString("propertyId"))+"  $"+fmt(split.getLong("amount")),14,Color.rgb(112,105,92)));}box.addView(details);
