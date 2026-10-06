@@ -462,39 +462,41 @@ public class MainActivity extends Activity {
     private void addLease(JSONObject unit) { leaseForm(unit,null); }
     private void leaseForm(JSONObject unit, JSONObject original) {
         if(original!=null&&original.has("terminatedOn")){error(new IllegalArgumentException("已退租租約保留歷史，請新增下一位租客的租約"));return;}
-        LinearLayout layout = form();
-        EditText tenant = field(layout, "租客姓名"), email = field(layout, "查看報表用 Gmail");
-        EditText start = dateField(layout, "起租日",false), end = dateField(layout, "到期日",false);start.setText("");end.setText("");
-        EditText rent = number(layout, "月租金（年繳也填每月金額）"), day = number(layout, "每月應繳日 1–31");
-        Spinner cycle = choice(layout, new String[]{"月繳", "年繳"});
-        EditText deposit = number(layout, "約定押金，無押金填0");
-        Spinner utilities = choice(layout, new String[]{"租客自行繳水電", "管理者代收水電"});
-        EditText water = number(layout, "代收固定月水費，可留空待設定");
-        EditText rate = number(layout, "每度電費（只套用新開水電帳單）");rate.setText("5");
-        EditText initialMeter=number(layout,"起始電度（起租時電表讀數，可稍後補登）");
+        LinearLayout layout = form();layout.setPadding(dp(12),dp(4),dp(12),dp(8));
+        LinearLayout tenantSection=expenseSection(layout,"租客資訊"),termSection=expenseSection(layout,"租期與租金"),utilitySection=expenseSection(layout,"水電設定"),contractSection=expenseSection(layout,"PDF 合約");
+        EditText tenant = field(tenantSection, "租客姓名"), email = field(tenantSection, "查看報表用 Gmail");
+        EditText start = dateField(termSection, "起租日",false), end = dateField(termSection, "到期日",false);start.setText("");end.setText("");
+        EditText rent = number(termSection, "月租金（年繳也填每月金額）"), day = number(termSection, "每月應繳日 1–31");
+        Spinner cycle = choice(termSection, new String[]{"月繳", "年繳"});
+        EditText deposit = number(termSection, "約定押金，無押金填0");
+        Spinner utilities = choice(utilitySection, new String[]{"租客自行繳水電", "管理者代收水電"});
+        EditText water = number(utilitySection, "代收固定月水費，可留空待設定");
+        EditText rate = number(utilitySection, "每度電費（只套用新開水電帳單）");rate.setText("5");
+        EditText initialMeter=number(utilitySection,"起始電度（起租時電表讀數，可稍後補登）");
+        for(View input:new View[]{tenant,email,start,end,rent,day,cycle,deposit,utilities,water,rate,initialMeter})polishExpenseInput(input);tenant.setHint("租客姓名");email.setHint("查看報表用 Gmail");rent.setHint("每月金額");day.setHint("1–31");deposit.setHint("無押金填 0");water.setHint("可稍後設定");rate.setHint("每度電價");initialMeter.setHint("起租時電表讀數");email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        LinearLayout emailRow=(LinearLayout)email.getParent();TextView emailLabel=(TextView)emailRow.getChildAt(0);emailRow.removeView(emailLabel);tenantSection.addView(emailLabel,tenantSection.indexOfChild(emailRow));emailLabel.setLayoutParams(new LinearLayout.LayoutParams(-1,-2));
         final boolean[] attachContract={false};
-        TextView contractLabel=text(original==null||original.optString("contractFile").isEmpty()?"PDF 合約：尚未附上": "PDF 合約："+original.optString("contractName","租賃合約.pdf"),14,Color.DKGRAY);layout.addView(contractLabel);
+        TextView contractLabel=text(original==null||original.optString("contractFile").isEmpty()?"PDF 合約：尚未附上": "PDF 合約："+original.optString("contractName","租賃合約.pdf"),14,Color.DKGRAY);contractSection.addView(contractLabel);
         if(original==null){
             utilities.setSelection(1);water.setText("200");
             start.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence value,int a,int c,int d){}public void onTextChanged(CharSequence value,int a,int before,int count){try{end.setText(LeaseDates.oneYearAfter(value.toString()));}catch(Exception e){end.setText("");}}public void afterTextChanged(Editable value){}});
         }
         if(original!=null) {
-            if(original.has("initialMeter")&&!original.isNull("initialMeter"))initialMeter.setText(original.optString("initialMeter"));if(hasMeterHistory(original.optString("id"))&&original.has("initialMeter")&&!original.isNull("initialMeter")){initialMeter.setEnabled(false);layout.addView(text("已有抄表或帳單，起始電度保留原紀錄；讀數修正請使用抄表流程。",14,Color.DKGRAY));}
+            if(original.has("initialMeter")&&!original.isNull("initialMeter"))initialMeter.setText(original.optString("initialMeter"));if(hasMeterHistory(original.optString("id"))&&original.has("initialMeter")&&!original.isNull("initialMeter")){initialMeter.setEnabled(false);utilitySection.addView(text("已有抄表或帳單，起始電度保留原紀錄；讀數修正請使用抄表流程。",14,Color.DKGRAY));}
             tenant.setText(original.optString("tenant"));email.setText(original.optString("email"));start.setText(original.optString("start"));end.setText(original.optString("end"));
             rent.setText(original.optString("rent"));day.setText(original.optString("dueDay"));deposit.setText(original.optString("deposit"));
             cycle.setSelection(original.optString("cycle").equals("年繳")?1:0);utilities.setSelection(original.optString("utilities").equals("管理者代收水電")?1:0);
             if(!original.isNull("water"))water.setText(original.optString("water"));rate.setText(original.optString("electricRate","5"));
             if(hasBilling(original.optString("id"))) {
-                layout.addView(text("已有帳務：可延長到期日，但不能縮短。起租日、租金、應繳日、押金與繳款週期鎖定；水電設定只套用新帳單。同一租客續住可延長，換租客請新增租約。",14,Color.rgb(137,83,15)));
+                termSection.addView(text("已有帳務：可延長到期日，但不能縮短。起租日、租金、應繳日、押金與繳款週期鎖定；水電設定只套用新帳單。同一租客續住可延長，換租客請新增租約。",14,Color.rgb(137,83,15)));
                 for(EditText f:new EditText[]{start,rent,day,deposit})f.setEnabled(false);cycle.setEnabled(false);
             }
         }
-        ScrollView scroll = new ScrollView(this); scroll.addView(layout);
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(unit.optString("code") + "：租約")
-            .setView(scroll).setNeutralButton("儲存並選 PDF",null).setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
-        dialog.setOnShowListener(v -> {
-            dialog.getButton(-3).setOnClickListener(w->{attachContract[0]=true;try{dialog.getButton(-1).performClick();}finally{attachContract[0]=false;}});
-            dialog.getButton(-1).setOnClickListener(w -> {
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(layout);
+        android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(Color.rgb(248,244,237));TextView title=text(unit.optString("code")+" · "+(original==null?"新增租約":"修改租約"),20,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);title.setPadding(dp(16),dp(12),dp(16),dp(10));page.addView(title,new LinearLayout.LayoutParams(-1,-2));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),pdf=styledButton("儲存並選 PDF",false,false),saveButton=styledButton("儲存",true,false);for(Button button:new Button[]{cancel,pdf,saveButton}){button.setTextSize(13);button.setMinWidth(0);button.setMinimumWidth(0);button.setPadding(dp(4),0,dp(4),0);LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(48),button==pdf?1.6f:1f);if(button!=saveButton)params.rightMargin=dp(6);footer.addView(button,params);}page.addView(footer,new LinearLayout.LayoutParams(-1,-2));dialog.setContentView(page);dialog.setCanceledOnTouchOutside(false);cancel.setOnClickListener(v->dialog.dismiss());
+        pdf.setOnClickListener(w->{attachContract[0]=true;try{saveButton.performClick();}finally{attachContract[0]=false;}});
+        saveButton.setOnClickListener(w -> {
             String person = tenant.getText().toString().trim(), mail = email.getText().toString().trim();
             if (person.isEmpty()) { tenant.setError("請填姓名"); return; }
             if (!Patterns.EMAIL_ADDRESS.matcher(mail).matches() || !mail.toLowerCase(Locale.ROOT).endsWith("@gmail.com")) {
@@ -531,7 +533,7 @@ public class MainActivity extends Activity {
                 if(original==null)leases.put(lease);else for(int i=0;i<leases.length();i++)if(leases.optJSONObject(i).optString("id").equals(original.optString("id")))leases.put(i,lease);
                 if (save("leases", leases)) { dialog.dismiss(); render();if(attachContract[0])pickContract(lease.optString("id")); }
             } catch (Exception e) { error(e); }
-        });}); dialog.show();
+        });dialog.show();dialog.getWindow().setLayout(-1,-1);dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     }
 
 
