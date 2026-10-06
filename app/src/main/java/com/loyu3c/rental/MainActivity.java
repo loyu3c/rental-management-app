@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
         render();
     }
     @Override protected void onDestroy() {
-        for(AlertDialog dialog:new ArrayList<>(livePanels.keySet()))dialog.dismiss();livePanels.clear();super.onDestroy();
+        for(AlertDialog dialog:new ArrayList<>(livePanels.keySet()))dialog.dismiss();livePanels.clear();expenseImages.shutdown();super.onDestroy();
     }
     @Override public void onSaveInstanceState(Bundle out) {
         out.putInt("tab", selected); out.putString("property",propertyId); out.putString("unit",unitId);
@@ -932,7 +932,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject fullBackup() throws JSONException {
-        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",9);for(String key:KEYS)backup.put(key,data(key));return backup;
+        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",10);for(String key:KEYS)backup.put(key,data(key));return backup;
     }
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
@@ -1001,6 +1001,7 @@ public class MainActivity extends Activity {
         TextView money=text("金額：$"+fmt(row.getLong("amount")),18,Color.rgb(90,61,37));money.setTypeface(null,Typeface.BOLD);left.addView(money);
         left.addView(text("分類："+categoryName(row.getString("category"))+"\n付款帳戶："+accountName(row.getString("accountId")),14,Color.rgb(112,105,92)));
         if(row.has("history")){Button history=styledButton("修改紀錄 · "+row.getJSONArray("history").length()+" 次",false,false);history.setTextSize(12);history.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);history.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));history.setOnClickListener(v->expenseHistory(row.optString("id")));left.addView(history,new LinearLayout.LayoutParams(-1,-2));}
+        JSONArray photos=ExpensePhotos.photos(row);if(photos.length()>0){LinearLayout right=new LinearLayout(this);right.setOrientation(LinearLayout.VERTICAL);right.setGravity(Gravity.END);ImageView thumbnail=new ImageView(this);thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);thumbnail.setBackground(surface(Color.rgb(239,237,233),8));right.addView(thumbnail,new LinearLayout.LayoutParams(dp(80),dp(80)));loadExpenseThumbnail(thumbnail,photos.getString(0));TextView count=text("照片 "+photos.length()+" 張",12,Color.rgb(112,105,92));right.addView(count);right.setContentDescription("查看此筆支出的 "+photos.length()+" 張照片");right.setOnClickListener(v->expensePhotoGallery(row));thumbnail.setOnClickListener(v->expensePhotoGallery(row));count.setOnClickListener(v->expensePhotoGallery(row));content.addView(right,new LinearLayout.LayoutParams(-2,-2));}
         box.addView(content,new LinearLayout.LayoutParams(-1,-2));
         JSONArray splits=row.getJSONArray("splits");Button toggle=styledButton("分攤明細 · "+splits.length()+" 個不動產  ▾",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout details=new LinearLayout(this);details.setOrientation(LinearLayout.VERTICAL);details.setVisibility(View.GONE);for(int i=0;i<splits.length();i++){JSONObject split=splits.getJSONObject(i);details.addView(text(propertyName(split.getString("propertyId"))+"  $"+fmt(split.getLong("amount")),14,Color.rgb(112,105,92)));}box.addView(details);
@@ -1014,7 +1015,7 @@ public class MainActivity extends Activity {
     }
     private void editExpense(JSONObject original){try{JSONObject draft=new JSONObject().put("date",original.getString("date")).put("amount",original.getLong("amount")).put("accountId",original.getString("accountId")).put("category",original.getString("category")).put("raw",original.getString("description")).put("splits",original.getJSONArray("splits")).put("propertyIds",new JSONArray());expenseForm(draft,new JSONObject(original.toString()));}catch(Exception e){error(e);}}
     private void expenseHistory(String id){
-        LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{JSONObject current=find("expenses",id);if(current==null)return;card("目前版本",expenseVersionDetail(current)+(current.optBoolean("void")?"\n已撤銷":""));JSONArray history=current.optJSONArray("history");if(history!=null)for(int i=history.length()-1;i>=0;i--){JSONObject entry=history.getJSONObject(i);String time=java.time.Instant.parse(entry.getString("changedAt")).atZone(ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));card("修改前版本 · "+time,expenseVersionDetail(entry.getJSONObject("previous")));}card("紀錄用途","修改前版本只供查閱，不列入餘額與報表。");}catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("支出修改紀錄",layout,refresh);
+        LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{JSONObject current=find("expenses",id);if(current==null)return;card("目前版本",expenseVersionDetail(current)+(current.optBoolean("void")?"\n已撤銷":""));JSONArray history=current.optJSONArray("history");if(history!=null)for(int i=history.length()-1;i>=0;i--){JSONObject entry=history.getJSONObject(i);String time=java.time.Instant.parse(entry.getString("changedAt")).atZone(ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));JSONObject prior=entry.getJSONObject("previous");LinearLayout historyCard=card("修改前版本 · "+time,expenseVersionDetail(prior));if(ExpensePhotos.photos(prior).length()>0)cardAction(historyCard,"照片憑證",()->expensePhotoGallery(prior));}card("紀錄用途","修改前版本只供查閱，不列入餘額與報表。");}catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("支出修改紀錄",layout,refresh);
     }
     private String expenseVersionDetail(JSONObject row) throws JSONException {
         String detail="項目："+row.getString("description")+"\n金額：$"+fmt(row.getLong("amount"))+"\n付款日期："+row.getString("date")+"\n分類："+categoryName(row.getString("category"))+"\n付款帳戶："+accountName(row.getString("accountId"));JSONArray splits=row.getJSONArray("splits");for(int i=0;i<splits.length();i++){JSONObject split=splits.getJSONObject(i);detail+="\n"+propertyName(split.getString("propertyId"))+" $"+fmt(split.getLong("amount"));}return detail;
@@ -1111,11 +1112,15 @@ public class MainActivity extends Activity {
         List<JSONObject> accounts=accountRows();JSONArray properties=data("properties");
         if(accounts.isEmpty()||properties.length()==0){error(new IllegalArgumentException("請先建立不動產與付款帳戶"));return;}
         addDraftAccountPlaceholder(accounts,draft);
+        final List<String> photoNames=new ArrayList<>(),ownedPhotos=new ArrayList<>();
+        try{JSONArray initial=draft!=null&&draft.has("photos")?ExpensePhotos.photos(draft):original!=null?ExpensePhotos.photos(original):new JSONArray();for(int i=0;i<initial.length();i++)photoNames.add(initial.getString(i));JSONArray owned=draft==null?null:draft.optJSONArray("ownedPhotos");if(owned!=null)for(int i=0;i<owned.length();i++)ownedPhotos.add(owned.getString(i));}catch(Exception e){error(e);return;}
+        boolean[] handedOff={false},savedPhotos={false};
         LinearLayout layout=form();EditText date=dateField(layout,"實際付款日期",false);date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"付款來源");
         List<JSONObject> categoryRows=new ArrayList<>();JSONArray categoryCatalog=data("expenseCategories");for(int i=0;i<categoryCatalog.length();i++)if(categoryCatalog.optJSONObject(i).optBoolean("active")||(original!=null&&categoryCatalog.optJSONObject(i).optString("id").equals(original.optString("category"))))categoryRows.add(categoryCatalog.optJSONObject(i));
         if(categoryRows.isEmpty()){error(new IllegalArgumentException("請先啟用至少一個支出類別"));return;}
         String[] categories=new String[categoryRows.size()+1];categories[0]="請選支出分類";for(int i=0;i<categoryRows.size();i++)categories[i+1]=categoryRows.get(i).optString("name");
         Spinner category=choice(layout,"支出類別",categories);EditText description=labeledField(layout,"項目／備註，例如B、C棟燈具更換");EditText total=labeledNumber(layout,"總付款金額");
+        LinearLayout photoSection=new LinearLayout(this);photoSection.setOrientation(LinearLayout.VERTICAL);layout.addView(photoSection,layout.indexOfChild((View)description.getParent())+1);
         layout.addView(text("各棟分攤金額：均分會覆寫下方全部金額，可再手動調整；不分攤的留空。餘數由上至下各加1元。總和需等於付款；房貸只記每月總扣款，不拆本金利息。",14,Color.DKGRAY));
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++)fields.add(labeledNumber(layout,properties.optJSONObject(i).optString("name")));
         if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));for(int c=0;c<categoryRows.size();c++)if(categoryRows.get(c).optString("id").equals(draft.optString("category")))category.setSelection(c+1);try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
@@ -1131,19 +1136,26 @@ public class MainActivity extends Activity {
         }catch(Exception e){total.setError(e.getMessage());total.requestFocus();}});
 
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle(original==null?"支出與分攤":"修改支出與分攤").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        Runnable refreshPhotos=()->{photoSection.removeAllViews();photoSection.addView(text("照片憑證 · "+photoNames.size()+" / 3 張",14,Color.DKGRAY));
+            for(String name:new ArrayList<>(photoNames)){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);line.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));loadExpenseThumbnail(image,name);image.setOnClickListener(v->viewMeterPhoto(name));Button remove=styledButton("移除",false,false);line.addView(remove);remove.setOnClickListener(v->{photoNames.remove(name);((Runnable)photoSection.getTag()).run();});photoSection.addView(line);}
+            if(photoNames.size()<3){Button add=styledButton("＋ 拍照／選相簿",false,false);photoSection.addView(add);add.setOnClickListener(v->{try{JSONObject snapshot=new JSONObject().put("date",date.getText().toString()).put("raw",description.getText().toString()).put("amount",total.getText().toString()).put("accountId",accounts.get(account.getSelectedItemPosition()).optString("id")).put("category",category.getSelectedItemPosition()==0?"":categoryRows.get(category.getSelectedItemPosition()-1).optString("id")).put("propertyIds",new JSONArray()).put("photos",new JSONArray(photoNames)).put("ownedPhotos",new JSONArray(ownedPhotos));JSONArray values=new JSONArray();for(int i=0;i<fields.size();i++)values.put(new JSONObject().put("propertyId",properties.optJSONObject(i).optString("id")).put("amount",fields.get(i).getText().toString()));snapshot.put("splits",values);pickExpensePhoto(snapshot,original,dialog,handedOff);}catch(Exception e){error(e);}});}
+        };photoSection.setTag(refreshPhotos);refreshPhotos.run();
+        dialog.setOnDismissListener(d->{if(!handedOff[0]&&!savedPhotos[0])for(String name:ownedPhotos)if(ExpensePhotos.photoName(name))new File(photoDir(),name).delete();if(!handedOff[0])getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingExpensePhoto").commit();});
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONArray splits=new JSONArray();for(int i=0;i<fields.size();i++){long n=amount(fields.get(i),true);if(n>0)splits.put(new JSONObject().put("propertyId",properties.getJSONObject(i).getString("id")).put("amount",n));}
             if(category.getSelectedItem().toString().equals("請選支出分類"))throw new IllegalArgumentException("請選擇支出類別");
             JSONObject a=selectedDraftAccount(accounts,account);JSONObject row=Bookkeeping.expense(dateValue(date),a.getString("id"),categoryRows.get(category.getSelectedItemPosition()-1).getString("id"),requiredText(description),amount(total,false),splits);
+            row.put("photos",new JSONArray(photoNames));for(String name:photoNames){android.graphics.Bitmap check=photoPreview(new File(photoDir(),name));check.recycle();}
             if(original!=null){validateBackup(fullBackup().put("expenses",ExpenseEdits.replace(data("expenses"),original,row,java.time.Instant.now().toString())));}
             StringBuilder preview=new StringBuilder(row.getString("date")+" · "+categoryName(row.getString("category"))+"\n"+row.getString("description")+"\n付款："+a.getString("name")+" $"+row.getLong("amount"));
             for(int i=0;i<splits.length();i++)preview.append("\n").append(propertyName(splits.getJSONObject(i).getString("propertyId"))).append(" $").append(splits.getJSONObject(i).getLong("amount"));
+            preview.append("\n照片憑證：").append(photoNames.size()).append(" 張");
             if(original!=null)preview.append("\n修改會保留原版本，只計算修改後金額；原對帳快照保留，餘額與報表會重算。");
             preview.append(LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(a.getString("start")))?"\n起算日前歷史：不再扣期初餘額。":"\n只扣付款帳戶一次，不因分攤重複扣款。");
             new AlertDialog.Builder(this).setMessage(display(String.valueOf(preview))).setNegativeButton("修改",null).setPositiveButton(original==null?"確認支出":"確認修改",(d,b)->{try{
                 JSONArray rows=data("expenses");for(int i=0;i<rows.length();i++){JSONObject old=rows.getJSONObject(i);if(original!=null&&old.getString("id").equals(original.getString("id")))continue;if(old.getString("id").equals(row.getString("id")))return;
                     if(!old.optBoolean("void")&&old.getString("date").equals(row.getString("date"))&&old.getString("accountId").equals(row.getString("accountId"))&&old.getString("category").equals(row.getString("category"))&&old.getString("description").equals(row.getString("description"))&&old.getLong("amount")==row.getLong("amount"))throw new IllegalArgumentException("相同日期、帳戶、項目與金額已有紀錄，請核對；若為另一筆請填交易辨識。");}
-                if(original==null)rows.put(row);else rows=ExpenseEdits.replace(rows,original,row,java.time.Instant.now().toString());if(saveChecked("expenses",rows)){dialog.dismiss();render();}
+                if(original==null)rows.put(row);else rows=ExpenseEdits.replace(rows,original,row,java.time.Instant.now().toString());if(saveChecked("expenses",rows)){savedPhotos[0]=true;for(String name:ownedPhotos)if(!photoNames.contains(name))new File(photoDir(),name).delete();dialog.dismiss();render();}
             }catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
     }
@@ -1334,6 +1346,33 @@ public class MainActivity extends Activity {
 
     private static final int CAMERA_PHOTO=43, PICK_PHOTO=44;
     private static final int PICK_CONTRACT=48;
+    private static final int CAMERA_EXPENSE=49, PICK_EXPENSE=50;
+    private final java.util.concurrent.ExecutorService expenseImages=java.util.concurrent.Executors.newFixedThreadPool(2);
+    private void loadExpenseThumbnail(ImageView image,String name){
+        image.setContentDescription("照片縮圖，點擊查看");expenseImages.execute(()->{try{File file=new File(photoDir(),name);android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();opts.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(opts.outWidth<=0||opts.outHeight<=0)throw new IOException();opts.inJustDecodeBounds=false;opts.inSampleSize=1;while(Math.max(opts.outWidth,opts.outHeight)/opts.inSampleSize>256)opts.inSampleSize*=2;android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(bitmap==null)throw new IOException();runOnUiThread(()->{if(isDestroyed()){bitmap.recycle();return;}image.setImageBitmap(bitmap);});}catch(Exception e){runOnUiThread(()->image.setContentDescription("照片無法載入，請查看完整備份"));}});
+    }
+    private void expensePhotoGallery(JSONObject row){
+        try{JSONArray photos=ExpensePhotos.photos(row);LinearLayout layout=form();layout.addView(text("共 "+photos.length()+" 張照片；點擊可開啟原圖",14,Color.DKGRAY));for(int i=0;i<photos.length();i++){String name=photos.getString(i);ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);layout.addView(image,new LinearLayout.LayoutParams(-1,dp(220)));loadExpenseThumbnail(image,name);image.setOnClickListener(v->viewMeterPhoto(name));}ScrollView scroll=new ScrollView(this);scroll.addView(layout);new AlertDialog.Builder(this).setTitle("支出照片憑證").setView(scroll).setPositiveButton("關閉",null).show();}catch(Exception e){error(e);}
+    }
+    private void pickExpensePhoto(JSONObject draft,JSONObject original,AlertDialog source,boolean[] handedOff){
+        new AlertDialog.Builder(this).setTitle("照片來源").setItems(new String[]{"開啟相機拍照","從相簿／檔案選取"},(d,n)->{String name="exp-"+UUID.randomUUID()+".jpg";try{
+            JSONObject pending=new JSONObject().put("draft",draft).put("original",original==null?JSONObject.NULL:original).put("file",name);if(!getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingExpensePhoto",pending.toString()).commit())throw new IOException("草稿保存失敗");
+            if(n==0){Uri uri=photoUri(name);Intent camera=new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).putExtra(android.provider.MediaStore.EXTRA_OUTPUT,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);camera.setClipData(android.content.ClipData.newRawUri("expense",uri));startActivityForResult(camera,CAMERA_EXPENSE);}else startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),PICK_EXPENSE);
+            handedOff[0]=true;source.dismiss();
+        }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingExpensePhoto").commit();new File(photoDir(),name).delete();error(new IllegalArgumentException("無法啟動相機或相簿，表單資料保留，請重試"));}}).setNegativeButton("取消",null).show();
+    }
+    private void reopenExpensePhotoDraft(JSONObject pending,boolean added){
+        try{JSONObject draft=pending.getJSONObject("draft");String file=pending.getString("file");if(added){JSONArray names=draft.getJSONArray("photos"),owned=draft.getJSONArray("ownedPhotos");names.put(file);owned.put(file);ExpensePhotos.photos(draft);}else new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingExpensePhoto").commit();expenseForm(draft,pending.isNull("original")?null:pending.getJSONObject("original"));}catch(Exception e){error(e);}
+    }
+    private void expensePhotoResult(int request,int result,Intent intent){
+        String raw=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingExpensePhoto",null);if(raw==null)return;try{JSONObject pending=new JSONObject(raw);String name=pending.getString("file");if(!ExpensePhotos.photoName(name))throw new IOException();revokeUriPermission(photoUri(name),Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if(result!=RESULT_OK||(request==PICK_EXPENSE&&(intent==null||intent.getData()==null))){reopenExpensePhotoDraft(pending,false);return;}
+            AlertDialog progress=busy("正在讀取照片…");new Thread(()->{try{
+                File file=new File(photoDir(),name);if(request==PICK_EXPENSE){try(InputStream in=getContentResolver().openInputStream(intent.getData());OutputStream out=new FileOutputStream(file)){if(in==null)throw new IOException();byte[] buffer=new byte[8192];int count;long total=0;while((count=in.read(buffer))!=-1){total+=count;if(total>BackupArchive.PHOTO_LIMIT)throw new IOException();out.write(buffer,0,count);}}}
+                android.graphics.Bitmap bitmap=photoPreview(file);bitmap.recycle();runOnUiThread(()->{progress.dismiss();reopenExpensePhotoDraft(pending,true);});
+            }catch(Exception e){runOnUiThread(()->{progress.dismiss();reopenExpensePhotoDraft(pending,false);error(new IllegalArgumentException("照片無法讀取，請選25MB以下可開啟的圖片"));});}}).start();
+        }catch(Exception e){error(e);}
+    }
     private boolean hasMeterHistory(String leaseId){
         if(hasBilling(leaseId))return true;JSONArray rows=data("meterReadings");for(int i=0;i<rows.length();i++)if(leaseId.equals(rows.optJSONObject(i).optString("leaseId")))return true;return false;
     }
@@ -1370,7 +1409,7 @@ public class MainActivity extends Activity {
         }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("抄電表／照片",layout,refresh);
     }
     private void viewMeterPhoto(String name) {
-        try{File f=new File(photoDir(),name);if(!f.isFile())throw new IOException("照片缺少，請從完整ZIP備份還原");Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(name),"image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(view);}catch(Exception e){error(new IllegalArgumentException("無法開啟照片，請確認有圖片檢視程式及照片檔案"));}
+        try{File f=new File(photoDir(),name);if(!f.isFile())throw new IOException("照片缺少，請從完整ZIP備份還原");Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(name),getContentResolver().getType(photoUri(name))).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(view);}catch(Exception e){error(new IllegalArgumentException("無法開啟照片，請確認有圖片檢視程式及照片檔案"));}
     }
     private void meterForm(JSONObject lease) {
         LinearLayout layout=form();EditText month=dateField(layout,"用電帳單月份",true),date=dateField(layout,"實際抄表日期",false),prior=number(layout,"上期／起始電表讀數"),current=number(layout,"本期電表讀數"),note=field(layout,"抄表備註");month.setText(YearMonth.from(today()).toString());
@@ -1422,19 +1461,20 @@ public class MainActivity extends Activity {
         final String snapshot=raw;AlertDialog progress=busy("正在匯出帳務、合約與照片，請稍候…");new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException();BackupArchive.write(out,new JSONObject(snapshot),photoDir());runOnUiThread(()->{progress.dismiss();pendingBackup=null;getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingBackup").commit();Toast.makeText(this,"完整ZIP備份已匯出，包含照片、PDF合約與帳務",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份匯出失敗："+e.getMessage()+"；請刪除未完成檔案並重新匯出"));});}}).start();
     }
     private void readArchive(Uri uri) {
-        File staging=new File(getCacheDir(),"restore-"+UUID.randomUUID());AlertDialog progress=busy("正在檢查備份與照片…");new Thread(()->{try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException();JSONObject backup=BackupArchive.read(in,staging);validateBackup(backup);for(String file:LeaseFiles.files(backup))validateContractPdf(new File(staging,file));for(String file:MeterReadings.files(backup.getJSONArray("meterReadings")))photoPreview(new File(staging,file)).recycle();
+        File staging=new File(getCacheDir(),"restore-"+UUID.randomUUID());AlertDialog progress=busy("正在檢查備份與照片…");new Thread(()->{try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException();JSONObject backup=BackupArchive.read(in,staging);validateBackup(backup);for(String file:LeaseFiles.files(backup))validateContractPdf(new File(staging,file));for(String file:MeterReadings.files(backup.getJSONArray("meterReadings")))photoPreview(new File(staging,file)).recycle();for(String file:ExpensePhotos.files(backup))photoPreview(new File(staging,file)).recycle();
             runOnUiThread(()->{progress.dismiss();new AlertDialog.Builder(this).setMessage("已驗證備份、合約與照片。確定替換全部資料？舊v1–v5沒有抄表紀錄／照片；v1–v3沒有押金收付；v1–v4沒有退租結算。請保留目前的完整備份。").setNegativeButton("取消",(d,w)->clearStaging(staging)).setOnCancelListener(d->clearStaging(staging)).setPositiveButton("確認還原",(d,w)->restoreArchive(backup,staging)).show();});
         }catch(Exception e){clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("備份無效或照片缺少："+e.getMessage()+"；原資料未替換"));});}}).start();
     }
     private void restoreArchive(JSONObject backup,File staging) {
         AlertDialog progress=busy("正在還原帳務與照片…");new Thread(()->{List<File> added=new ArrayList<>();boolean committed=false;try{
             JSONArray rows=backup.getJSONArray("meterReadings");for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);String old=row.getString("file");if(old.isEmpty())continue;String name=UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("照片還原失敗");added.add(destination);row.put("file",name);}
+            Map<String,String> expenseMapping=new HashMap<>();for(String old:ExpensePhotos.files(backup)){String name="exp-"+UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("支出照片還原失敗");added.add(destination);expenseMapping.put(old,name);}ExpensePhotos.remap(backup,expenseMapping);
             JSONArray contractLeases=backup.getJSONArray("leases");for(int i=0;i<contractLeases.length();i++){JSONObject lease=contractLeases.getJSONObject(i);String old=lease.optString("contractFile");if(old.isEmpty())continue;String name=UUID.randomUUID()+".pdf";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("PDF合約還原失敗");added.add(destination);lease.put("contractFile",name);}
             validateBackup(backup);android.content.SharedPreferences.Editor editor=getSharedPreferences("catalog",MODE_PRIVATE).edit();for(String key:KEYS)editor.putString(key,backup.getJSONArray(key).toString());if(!editor.commit())throw new IOException("帳務保存失敗");committed=true;clearStaging(staging);runOnUiThread(()->{progress.dismiss();propertyId="";unitId="";render();body.post(this::refreshPanels);Toast.makeText(this,"資料與照片已還原",Toast.LENGTH_LONG).show();});
         }catch(Exception e){if(!committed)for(File file:added)file.delete();clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("還原失敗："+e.getMessage()));});}}).start();
     }
     private void validateBackup(JSONObject backup) throws Exception {
-        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 9))
+        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 10))
             throw new IllegalArgumentException();
         if(backup.getInt("version")==1) {backup.put("invoices",new JSONArray());backup.put("receipts",new JSONArray());}
         if(backup.getInt("version")<3)for(String key:new String[]{"accounts","expenses","transfers","reconciliations"})backup.put(key,new JSONArray());
@@ -1442,7 +1482,7 @@ public class MainActivity extends Activity {
         if(backup.getInt("version")<5)backup.put("settlements",new JSONArray());
         if(backup.getInt("version")<6)backup.put("meterReadings",new JSONArray());
         if(backup.getInt("version")<7)backup.put("expenseCategories",ExpenseCategories.defaults());
-        LeaseFiles.validate(backup);
+        LeaseFiles.validate(backup);ExpensePhotos.files(backup);
         java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
         java.util.Set<String> codes = new java.util.HashSet<>();
         JSONArray p = backup.getJSONArray("properties"), u = backup.getJSONArray("units"), l = backup.getJSONArray("leases");
@@ -1489,6 +1529,7 @@ public class MainActivity extends Activity {
         if(request==EXPORT_WORKBOOK){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerWorkbook(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingWorkbook").commit();return;}
         if(request==EXPORT_REPORT){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerReport(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingReport").commit();return;}
         if(request==VOICE_INPUT){voiceResult(result,intent);return;}
+        if(request==CAMERA_EXPENSE||request==PICK_EXPENSE){expensePhotoResult(request,result,intent);return;}
         if(request==PICK_CONTRACT){contractResult(result,intent);return;}
         if(request==CAMERA_PHOTO||request==PICK_PHOTO){photoResult(request,result,intent);return;}
         if(result!=RESULT_OK||intent==null||intent.getData()==null)return;

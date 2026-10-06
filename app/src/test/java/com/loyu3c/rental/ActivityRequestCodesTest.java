@@ -14,6 +14,7 @@ public class ActivityRequestCodesTest {
         while(declarations.find()){Matcher constants=Pattern.compile("(\\w+)\\s*=\\s*(\\d+)").matcher(declarations.group(1));while(constants.find()){
             String name=constants.group(1);int value=Integer.parseInt(constants.group(2));String old=values.put(value,name);assertNull("Activity request code collision: "+old+" and "+name,old);names.add(name);
         }}
-        assertTrue(names.containsAll(Arrays.asList("EXPORT","IMPORT","CAMERA_PHOTO","PICK_PHOTO","VOICE_INPUT","EXPORT_REPORT","EXPORT_WORKBOOK","PICK_CONTRACT")));
+        assertTrue(names.containsAll(Arrays.asList("EXPORT","IMPORT","CAMERA_PHOTO","PICK_PHOTO","VOICE_INPUT","EXPORT_REPORT","EXPORT_WORKBOOK","PICK_CONTRACT","CAMERA_EXPENSE","PICK_EXPENSE")));
     }
 }
+

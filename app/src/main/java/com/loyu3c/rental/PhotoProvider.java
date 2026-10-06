@@ -10,7 +10,7 @@ import java.io.*;
 public class PhotoProvider extends ContentProvider {
     public boolean onCreate(){return true;}
     private File file(Uri uri) throws FileNotFoundException {
-        String name=uri.getLastPathSegment();if(uri.getPathSegments().size()!=1||name==null||!(MeterReadings.photoName(name)||LeaseFiles.pdfName(name)))throw new FileNotFoundException("Invalid photo");
+        String name=uri.getLastPathSegment();if(uri.getPathSegments().size()!=1||name==null||!(MeterReadings.photoName(name)||ExpensePhotos.photoName(name)||LeaseFiles.pdfName(name)))throw new FileNotFoundException("Invalid photo");
         return new File(getContext().getFilesDir(),"meter-photos/"+name);
     }
     public ParcelFileDescriptor openFile(Uri uri,String mode) throws FileNotFoundException {
@@ -24,4 +24,5 @@ public class PhotoProvider extends ContentProvider {
     public int delete(Uri uri,String selection,String[] args){throw new UnsupportedOperationException();}
     public int update(Uri uri,ContentValues values,String selection,String[] args){throw new UnsupportedOperationException();}
 }
+
 
