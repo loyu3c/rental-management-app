@@ -13,6 +13,13 @@ Google 房東月報手動同步已實作，但需在自己的帳號完成服務�
 - [已確認需求](docs/requirements.md)
 - [規格驅動開發流程](docs/development-process.md)
 
+## 下載與驗證
+
+最新版 APK：<https://github.com/loyu3c/rental-management-app/releases/latest/download/rental-manager.apk>（預覽版，請先使用測試資料）
+
+每個 Release 都附上 APK 的 SHA-256、簽章憑證指紋與 GitHub 建置證明（`gh attestation verify rental-manager.apk --repo loyu3c/rental-management-app`）。
+發布方式：`versionName` 改好後推送同名標籤（例如 `v0.32.3`），`.github/workflows/release.yml` 會自動建置並建立 Release。
+
 ## 下一階段
 
 下一步完成Google端一次性部署及實機同步驗證，再加入背景同步與租客分檔權限，並補足帳務更正流程。每批先定規格，合併相關功能並通過檢查後再提供 APK 測試。

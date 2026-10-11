@@ -1,0 +1,82 @@
+name: Release APK
+# Push a tag like v0.32.3 (must match versionName in app/build.gradle) to publish a public GitHub Release
+# with the fixed-signature APK, its SHA-256 checksum, the signing certificate fingerprint and a build attestation.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches versionName
+        run: |
+          set -eu
+          ver=$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle)
+          case "$ver" in "${GITHUB_REF_NAME#v}"|"${GITHUB_REF_NAME#v}"-*) ;; *)
+            echo "::error::Tag $GITHUB_REF_NAME does not match versionName $ver"; exit 1;; esac
+          echo "VERSION_NAME=$ver" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Google sync contract tests
+        run: node google-sync/tests/run.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;34.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build using fixed signing key
+        env:
+          KEYSTORE_DATA: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
+          if [ -z "$KEYSTORE_DATA" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::error::Fixed signing Secrets are not configured."
+            exit 1
+          fi
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/rental-signing.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$KEYSTORE_DATA" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          gradle :app:testReleaseUnitTest :app:assembleRelease :app:lintRelease --no-daemon
+      - name: Checksum and signing certificate
+        run: |
+          set -eu
+          mkdir dist
+          cp app/build/outputs/apk/release/app-release.apk dist/rental-manager.apk
+          cd dist
+          sha256sum rental-manager.apk > SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs rental-manager.apk | tee certs.txt
+          cert=$(sed -n 's/.*certificate SHA-256 digest: //p' certs.txt | head -1 | sed 's/../&:/g; s/:$//' | tr a-f A-F)
+          sha=$(cut -d' ' -f1 SHA256SUMS.txt)
+          cat > ../notes.md <<NOTES
+          包租代管 App ${VERSION_NAME}（預覽版，請先使用測試資料，勿輸入真實帳務）
+
+          **下載**：下方 Assets 的 \`rental-manager.apk\`（Android 8.0 以上）
+
+          **驗證檔案**
+          - APK SHA-256：\`${sha}\`
+          - 簽章憑證 SHA-256：\`${cert}\`
+          - GitHub 建置證明：\`gh attestation verify rental-manager.apk --repo ${GITHUB_REPOSITORY}\`
+          NOTES
+          rm certs.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/rental-manager.apk
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/rental-manager.apk dist/SHA256SUMS.txt --title "包租代管 ${VERSION_NAME}" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
