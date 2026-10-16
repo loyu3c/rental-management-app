@@ -35,6 +35,14 @@ public class MainActivity extends Activity {
     }
     private boolean googleSyncRunning=false;
     private String pendingBackup;
+    private LeaseEditorSession leaseEditor;
+    private boolean destroyingLeaseEditor=false;
+    private static final java.util.Set<String> leaseAttachmentImports=java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+    private static final class LeaseEditorSession {
+        android.app.Dialog dialog;JSONObject attachments;String token;boolean saved;
+        java.util.function.Supplier<JSONObject> snapshot;Runnable refresh;
+    }
+
     private String propertyId="", unitId="";
     private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings","expenseCategories"};
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Taipei")); }
@@ -48,12 +56,16 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         if (state != null) { selected = state.getInt("tab", 0); propertyId=state.getString("property", ""); unitId=state.getString("unit", ""); }
         render();
+        if(state!=null&&state.getString("leaseEditor")!=null)try{restoreLeaseEditor(new JSONObject(state.getString("leaseEditor")));}catch(Exception e){error(e);}
     }
+    @Override protected void onResume(){super.onResume();watchLeaseAttachment();}
     @Override protected void onDestroy() {
+        destroyingLeaseEditor=true;if(leaseEditor!=null&&leaseEditor.dialog!=null)leaseEditor.dialog.dismiss();
         for(AlertDialog dialog:new ArrayList<>(livePanels.keySet()))dialog.dismiss();livePanels.clear();expenseImages.shutdown();super.onDestroy();
     }
     @Override public void onSaveInstanceState(Bundle out) {
         out.putInt("tab", selected); out.putString("property",propertyId); out.putString("unit",unitId);
+        if(leaseEditor!=null&&leaseEditor.dialog!=null&&leaseEditor.dialog.isShowing())out.putString("leaseEditor",leaseEditor.snapshot.get().toString());
         super.onSaveInstanceState(out);
     }
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density); }
@@ -469,12 +481,13 @@ public class MainActivity extends Activity {
         field.setError(null);return result;
     }
     private void addLease(JSONObject unit) { leaseForm(unit,null); }
-    private void leaseForm(JSONObject unit, JSONObject original) {
+    private void leaseForm(JSONObject unit,JSONObject original){leaseForm(unit,original,null);}
+    private void leaseForm(JSONObject unit, JSONObject original,JSONObject restored) {
         if(original!=null&&original.has("terminatedOn")){error(new IllegalArgumentException("已退租租約保留歷史，請新增下一位租客的租約"));return;}
         if(original==null&&!RentalUnits.enabled(unit)){error(new IllegalArgumentException("請先啟用出租單位"));return;}
         boolean locked=original!=null&&hasBilling(original.optString("id"));
         LinearLayout layout = form();layout.setPadding(dp(12),dp(4),dp(12),dp(8));
-        LinearLayout tenantSection=expenseSection(layout,"租客資訊"),termSection=expenseSection(layout,"租期與租金"),utilitySection=expenseSection(layout,"水電設定"),contractSection=expenseSection(layout,"PDF 合約");
+        LinearLayout tenantSection=expenseSection(layout,"租客資訊"),termSection=expenseSection(layout,"租期與租金"),utilitySection=expenseSection(layout,"水電設定"),contractSection=expenseSection(layout,"租約附件");
         EditText tenant = field(tenantSection, "租客姓名"), email = field(tenantSection, "查看報表用 Gmail");
         EditText start = dateField(termSection, "起租日",false), end = dateField(termSection, "到期日",false);start.setText("");end.setText("");
         EditText rent = number(termSection, "月租金（年繳也填每月金額）"), day = number(termSection, "每月應繳日 1–31");
@@ -487,9 +500,10 @@ public class MainActivity extends Activity {
         EditText initialMeter=number(utilitySection,"起始電度（起租時電表讀數，可稍後補登）");
         for(View input:new View[]{tenant,email,start,end,rent,day,pricing,cycle,firstDue,deposit,utilities,water,rate,initialMeter})polishExpenseInput(input);tenant.setHint("租客姓名");email.setHint("查看報表用 Gmail");rent.setHint("每月金額");day.setHint("1–31");deposit.setHint("無押金填 0");water.setHint("可稍後設定");rate.setHint("每度電價");initialMeter.setHint("起租時電表讀數");email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         LinearLayout emailRow=(LinearLayout)email.getParent();TextView emailLabel=(TextView)emailRow.getChildAt(0);emailRow.removeView(emailLabel);tenantSection.addView(emailLabel,tenantSection.indexOfChild(emailRow));emailLabel.setLayoutParams(new LinearLayout.LayoutParams(-1,-2));
-        final boolean[] attachContract={false},attachInitial={false};final boolean[] removeInitial={false};
-        Button[] saveRef={null};LinearLayout initialPhotos=new LinearLayout(this);initialPhotos.setOrientation(LinearLayout.VERTICAL);utilitySection.addView(initialPhotos);Runnable refreshInitial=()->{initialPhotos.removeAllViews();String name=original==null||removeInitial[0]?"":original.optString("initialMeterPhoto");if(!name.isEmpty()){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);initialPhotos.addView(image,new LinearLayout.LayoutParams(dp(88),dp(80)));loadExpenseThumbnail(image,name);image.setOnClickListener(v->viewMeterPhoto(name));Button remove=styledButton("移除起始照片（儲存後生效）",false,false);initialPhotos.addView(remove);remove.setOnClickListener(v->{removeInitial[0]=true;((Runnable)initialPhotos.getTag()).run();});}Button photo=styledButton(name.isEmpty()?"儲存並附起始電表照片":"儲存並更換起始電表照片",false,false);photo.setTextSize(13);initialPhotos.addView(photo);photo.setOnClickListener(v->{attachInitial[0]=true;try{saveRef[0].performClick();}finally{attachInitial[0]=false;}});initialPhotos.addView(text("先儲存租約，再拍照／選相簿；取消選圖不影響租約。",12,Color.DKGRAY));};initialPhotos.setTag(refreshInitial);refreshInitial.run();
-        TextView contractLabel=text(original==null||original.optString("contractFile").isEmpty()?"PDF 合約：尚未附上": "PDF 合約："+original.optString("contractName","租賃合約.pdf"),14,Color.DKGRAY);contractSection.addView(contractLabel);
+        LeaseEditorSession editor=new LeaseEditorSession();editor.token=restored==null?UUID.randomUUID().toString():restored.optString("token");try{editor.attachments=restored==null?LeaseAttachments.draft(original):restored.getJSONObject("attachments");}catch(Exception e){error(e);return;}leaseEditor=editor;
+        LinearLayout attachmentRows=new LinearLayout(this);attachmentRows.setOrientation(LinearLayout.VERTICAL);contractSection.addView(attachmentRows,new LinearLayout.LayoutParams(-1,-2));
+        editor.refresh=()->drawLeaseAttachments(editor,attachmentRows);editor.refresh.run();
+        contractSection.addView(text("附件與租約一起儲存；取消不會變更原附件。",12,Color.DKGRAY));
         if(original==null){
             utilities.setSelection(1);water.setText("200");
             start.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence value,int a,int c,int d){}public void onTextChanged(CharSequence value,int a,int before,int count){try{end.setText(pricing.getSelectedItemPosition()==0?LeaseDates.oneYearAfter(value.toString()):value.toString());}catch(Exception e){end.setText("");}}public void afterTextChanged(Editable value){}});
@@ -505,14 +519,18 @@ public class MainActivity extends Activity {
                 for(EditText f:new EditText[]{start,rent,day,deposit})f.setEnabled(false);cycle.setEnabled(false);pricing.setEnabled(false);firstDue.setEnabled(false);
             }
         }
+        EditText[] draftInputs={tenant,email,start,end,rent,day,firstDue,deposit,water,rate,initialMeter};String[] draftKeys={"tenant","email","start","end","rent","day","firstDue","deposit","water","rate","initialMeter"};
+        if(restored!=null)try{JSONObject values=restored.getJSONObject("values");for(int i=0;i<draftInputs.length;i++)draftInputs[i].setText(values.optString(draftKeys[i]));pricing.setSelection(values.optInt("pricing"));cycle.setSelection(values.optInt("cycle"));utilities.setSelection(values.optInt("utilities"));}catch(Exception e){error(e);return;}
         if(locked&&!RentTerms.scheduled(original)){((View)firstDue.getParent()).setVisibility(View.GONE);termsHelp.setText("舊租約已有帳務，保留原按月開單方式；新租約才套用新的繳款期程。");}else ((View)day.getParent()).setVisibility(View.GONE);
         AdapterView.OnItemSelectedListener termsListener=new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int n,long id){boolean monthly=pricing.getSelectedItemPosition()==0;if(original==null&&!monthly){try{if(end.getText().toString().equals(LeaseDates.oneYearAfter(start.getText().toString())))end.setText(start.getText());}catch(Exception ignored){}}if(!monthly&&cycle.getSelectedItemPosition()!=4)cycle.setSelection(4);if(monthly&&cycle.getSelectedItemPosition()==4)cycle.setSelection(0);cycle.setEnabled(!locked&&monthly);TextView rentName=(TextView)((LinearLayout)rent.getParent()).getChildAt(0);rentName.setText(monthly?"月租金":pricing.getSelectedItemPosition()==1?"每日租金":"整段總價");rent.setHint(monthly?"每月金額":pricing.getSelectedItemPosition()==1?"每日金額":"整段租期總額");}};pricing.setOnItemSelectedListener(termsListener);
         start.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void afterTextChanged(Editable e){}public void onTextChanged(CharSequence value,int a,int b,int c){if(firstDue.getText().toString().isEmpty())firstDue.setText(value);}});
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(layout);
         android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(Color.rgb(248,244,237));TextView title=text(unit.optString("code")+" · "+(original==null?"新增租約":"修改租約"),20,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);title.setPadding(dp(16),dp(12),dp(16),dp(10));page.addView(title,new LinearLayout.LayoutParams(-1,-2));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),pdf=styledButton("儲存並選 PDF",false,false),saveButton=styledButton("儲存",true,false);for(Button button:new Button[]{cancel,pdf,saveButton}){button.setTextSize(13);button.setMinWidth(0);button.setMinimumWidth(0);button.setPadding(dp(4),0,dp(4),0);LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(48),button==pdf?1.6f:1f);if(button!=saveButton)params.rightMargin=dp(6);footer.addView(button,params);}page.addView(footer,new LinearLayout.LayoutParams(-1,-2));saveRef[0]=saveButton;dialog.setContentView(page);dialog.setCanceledOnTouchOutside(false);cancel.setOnClickListener(v->dialog.dismiss());
-        pdf.setOnClickListener(w->{attachContract[0]=true;try{saveButton.performClick();}finally{attachContract[0]=false;}});
+        LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),saveButton=styledButton("儲存",true,false);LinearLayout.LayoutParams cancelParams=new LinearLayout.LayoutParams(0,dp(48),1);cancelParams.rightMargin=dp(8);footer.addView(cancel,cancelParams);footer.addView(saveButton,new LinearLayout.LayoutParams(0,dp(48),1));page.addView(footer,new LinearLayout.LayoutParams(-1,-2));dialog.setContentView(page);dialog.setCanceledOnTouchOutside(false);cancel.setOnClickListener(v->dialog.dismiss());editor.dialog=dialog;
+        editor.snapshot=()->{JSONObject snapshot=new JSONObject();try{JSONObject values=new JSONObject();for(int i=0;i<draftInputs.length;i++)values.put(draftKeys[i],draftInputs[i].getText().toString());values.put("pricing",pricing.getSelectedItemPosition()).put("cycle",cycle.getSelectedItemPosition()).put("utilities",utilities.getSelectedItemPosition());snapshot.put("token",editor.token).put("unitId",unit.optString("id")).put("original",original==null?JSONObject.NULL:original).put("attachments",editor.attachments).put("values",values).put("scroll",scroll.getScrollY());}catch(Exception e){throw new IllegalStateException(e);}return snapshot;};
+        dialog.setOnDismissListener(d->{if(!destroyingLeaseEditor){try{for(String name:LeaseAttachments.discard(editor.attachments,editor.saved))new File(photoDir(),name).delete();}catch(Exception e){error(e);}getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();}if(leaseEditor==editor)leaseEditor=null;});
         saveButton.setOnClickListener(w -> {
+            if(getSharedPreferences("workflow",MODE_PRIVATE).contains("pendingLeaseAttachment")){Toast.makeText(this,"附件仍在處理，請完成後再儲存",Toast.LENGTH_SHORT).show();return;}
             String person = tenant.getText().toString().trim(), mail = email.getText().toString().trim();
             if (person.isEmpty()) { tenant.setError("請填姓名"); return; }
             if (!Patterns.EMAIL_ADDRESS.matcher(mail).matches() || !mail.toLowerCase(Locale.ROOT).endsWith("@gmail.com")) {
@@ -542,16 +560,16 @@ public class MainActivity extends Activity {
                 JSONObject lease = original==null?new JSONObject():new JSONObject(original.toString()); lease.put("id", original==null?UUID.randomUUID().toString():original.optString("id")); lease.put("unitId", unit.optString("id"));
                 lease.put("unitCodeSnapshot", unit.optString("code")); lease.put("tenant", person); lease.put("email", mail);
                 lease.put("start", from.toString()); lease.put("end", to.toString()); lease.put("rent", monthly);
-                if(!locked){lease.put("termsVersion",1).put("pricing",pricing.getSelectedItem().toString()).put("firstDue",dateValue(firstDue));}if(removeInitial[0])lease.remove("initialMeterPhoto");
+                if(!locked){lease.put("termsVersion",1).put("pricing",pricing.getSelectedItem().toString()).put("firstDue",dateValue(firstDue));}LeaseAttachments.apply(editor.attachments,lease);if(!lease.optString("initialMeterPhoto").isEmpty()){android.graphics.Bitmap check=photoPreview(new File(photoDir(),lease.getString("initialMeterPhoto")));check.recycle();}if(!lease.optString("contractFile").isEmpty())validateContractPdf(new File(photoDir(),lease.getString("contractFile")));
                 lease.put("dueDay", due); lease.put("cycle", cycle.getSelectedItem().toString()); lease.put("deposit", held);
                 lease.put("utilities", utilities.getSelectedItem().toString()); lease.put("electricRate", electricRate);lease.put("initialMeter",initialReading<0?JSONObject.NULL:initialReading);
                 lease.put("water", utilities.getSelectedItemPosition() == 0 || waterAmount == -1 ? JSONObject.NULL : waterAmount);
                 RentTerms.validate(lease);if(RentTerms.scheduled(lease))RentTerms.period(lease,YearMonth.from(from));
                 if(original!=null){JSONObject latest=find("leases",original.optString("id"));if(latest==null||!latest.toString().equals(original.toString()))throw new IllegalArgumentException("租約已變更，請重新開啟修改");if(hasBilling(original.optString("id")))LeaseDates.validateBilledEdit(original,lease);}
                 if(original==null)leases.put(lease);else for(int i=0;i<leases.length();i++)if(leases.optJSONObject(i).optString("id").equals(original.optString("id")))leases.put(i,lease);
-                if (save("leases", leases)) { dialog.dismiss(); render();if(attachContract[0])pickContract(lease.optString("id"));else if(attachInitial[0])pickInitialMeterPhoto(lease); }
+                if (save("leases", leases)) { editor.saved=true;dialog.dismiss();render();refreshPanels(); }
             } catch (Exception e) { error(e); }
-        });dialog.show();dialog.getWindow().setLayout(-1,-1);dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        });dialog.show();dialog.getWindow().setLayout(-1,-1);dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);if(restored!=null)scroll.post(()->scroll.scrollTo(0,restored.optInt("scroll")));
     }
 
 
@@ -1384,6 +1402,7 @@ public class MainActivity extends Activity {
     private static final int PICK_CONTRACT=48;
     private static final int CAMERA_EXPENSE=49, PICK_EXPENSE=50;
     private static final int CAMERA_INITIAL=51, PICK_INITIAL=52;
+    private static final int CAMERA_LEASE_ATTACHMENT=53, PICK_LEASE_PHOTO=54, PICK_LEASE_PDF=55;
     private final java.util.concurrent.ExecutorService expenseImages=java.util.concurrent.Executors.newFixedThreadPool(2);
     private void loadExpenseThumbnail(ImageView image,String name){
         image.setContentDescription("照片縮圖，點擊查看");expenseImages.execute(()->{try{File file=new File(photoDir(),name);android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();opts.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(opts.outWidth<=0||opts.outHeight<=0)throw new IOException();opts.inJustDecodeBounds=false;opts.inSampleSize=1;while(Math.max(opts.outWidth,opts.outHeight)/opts.inSampleSize>256)opts.inSampleSize*=2;android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(bitmap==null)throw new IOException();runOnUiThread(()->{if(isDestroyed()){bitmap.recycle();return;}image.setImageBitmap(bitmap);});}catch(Exception e){runOnUiThread(()->image.setContentDescription("照片無法載入，請查看完整備份"));}});
@@ -1412,6 +1431,47 @@ public class MainActivity extends Activity {
     }
     private boolean hasMeterHistory(String leaseId){
         if(hasBilling(leaseId))return true;JSONArray rows=data("meterReadings");for(int i=0;i<rows.length();i++)if(leaseId.equals(rows.optJSONObject(i).optString("leaseId")))return true;return false;
+    }
+    private boolean leaseAttachmentPending(){if(getSharedPreferences("workflow",MODE_PRIVATE).contains("pendingLeaseAttachment")){Toast.makeText(this,"附件正在處理，請稍候",Toast.LENGTH_SHORT).show();return true;}return false;}
+    private Button leaseAttachmentButton(String label){Button button=styledButton(label,false,false);button.setTextSize(13);button.setMinWidth(0);button.setMinimumWidth(0);button.setPadding(dp(4),0,dp(4),0);return button;}
+    private void drawLeaseAttachments(LeaseEditorSession editor,LinearLayout layout){
+        layout.removeAllViews();String photo=editor.attachments.optString("photo"),pdf=editor.attachments.optString("pdf");
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(4),0,dp(10));layout.addView(row,new LinearLayout.LayoutParams(-1,-2));
+        android.widget.FrameLayout thumbnail=new android.widget.FrameLayout(this);LinearLayout.LayoutParams thumbParams=new LinearLayout.LayoutParams(dp(80),dp(80));thumbParams.rightMargin=dp(12);row.addView(thumbnail,thumbParams);
+        if(!photo.isEmpty()){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),10));image.setClipToOutline(true);thumbnail.addView(image,new android.widget.FrameLayout.LayoutParams(-1,-1));loadExpenseThumbnail(image,photo);image.setOnClickListener(v->viewMeterPhoto(photo));Button remove=leaseAttachmentButton("×");remove.setTextSize(22);remove.setBackground(surface(Color.argb(235,255,252,247),20));remove.setContentDescription("移除起始電表照片，儲存後生效");thumbnail.addView(remove,new android.widget.FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END));remove.setOnClickListener(v->{try{if(leaseAttachmentPending())return;LeaseAttachments.remove(editor.attachments,false);editor.refresh.run();}catch(Exception e){error(e);}});}else{TextView empty=text("照片",14,Color.GRAY);empty.setGravity(Gravity.CENTER);empty.setBackground(surface(Color.rgb(239,237,233),10));thumbnail.addView(empty,new android.widget.FrameLayout.LayoutParams(-1,-1));}
+        LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);info.addView(text("起始電表照片",14,Color.rgb(90,61,37)));info.addView(text(photo.isEmpty()?"尚未附上":"已選取 · 點縮圖查看",12,Color.GRAY));row.addView(info,new LinearLayout.LayoutParams(0,-2,1));Button choosePhoto=leaseAttachmentButton(photo.isEmpty()?"新增":"更換");row.addView(choosePhoto,new LinearLayout.LayoutParams(dp(72),dp(48)));choosePhoto.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("起始電表照片").setItems(new String[]{"拍照","從相簿選取"},(d,n)->pickLeaseAttachment(editor,n==0?CAMERA_LEASE_ATTACHMENT:PICK_LEASE_PHOTO)).setNegativeButton("取消",null).show());
+        View line=new View(this);line.setBackgroundColor(Color.rgb(228,216,200));layout.addView(line,new LinearLayout.LayoutParams(-1,dp(1)));
+        LinearLayout pdfRow=new LinearLayout(this);pdfRow.setGravity(Gravity.CENTER_VERTICAL);pdfRow.setPadding(0,dp(8),0,dp(4));layout.addView(pdfRow,new LinearLayout.LayoutParams(-1,-2));LinearLayout pdfInfo=new LinearLayout(this);pdfInfo.setOrientation(LinearLayout.VERTICAL);pdfInfo.addView(text("PDF 合約",14,Color.rgb(90,61,37)));TextView name=text(pdf.isEmpty()?"尚未附上":editor.attachments.optString("pdfName","租賃合約.pdf"),13,Color.GRAY);name.setMaxLines(4);name.setEllipsize(android.text.TextUtils.TruncateAt.END);pdfInfo.addView(name);pdfRow.addView(pdfInfo,new LinearLayout.LayoutParams(0,-2,1));if(!pdf.isEmpty()){pdfInfo.setContentDescription("開啟所選 PDF 合約");pdfInfo.setOnClickListener(v->{try{viewContract(new JSONObject().put("contractFile",pdf));}catch(Exception e){error(e);}});Button more=leaseAttachmentButton("⋯");more.setContentDescription("PDF 合約操作");pdfRow.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{PopupMenu menu=new PopupMenu(this,more);menu.getMenu().add("開啟 PDF");menu.getMenu().add("移除 PDF");menu.setOnMenuItemClickListener(item->{try{if(item.getTitle().toString().equals("移除 PDF")){if(leaseAttachmentPending())return true;LeaseAttachments.remove(editor.attachments,true);editor.refresh.run();}else viewContract(new JSONObject().put("contractFile",pdf));}catch(Exception e){error(e);}return true;});menu.show();});}Button choosePdf=leaseAttachmentButton(pdf.isEmpty()?"選取":"更換");pdfRow.addView(choosePdf,new LinearLayout.LayoutParams(dp(72),dp(48)));choosePdf.setOnClickListener(v->pickLeaseAttachment(editor,PICK_LEASE_PDF));
+    }
+    private void restoreLeaseEditor(JSONObject state)throws JSONException{
+        JSONObject unit=find("units",state.getString("unitId"));if(unit==null)throw new IllegalArgumentException("出租單位不存在，無法恢復租約草稿");leaseForm(unit,state.isNull("original")?null:state.getJSONObject("original"),state);
+    }
+    private void pickLeaseAttachment(LeaseEditorSession editor,int request){
+        if(getSharedPreferences("workflow",MODE_PRIVATE).contains("pendingLeaseAttachment")){Toast.makeText(this,"附件正在處理，請稍候",Toast.LENGTH_SHORT).show();return;}
+        String file=UUID.randomUUID()+(request==PICK_LEASE_PDF?".pdf":".jpg");try{JSONObject pending=new JSONObject().put("draft",editor.snapshot.get()).put("file",file).put("token",editor.token).put("pdf",request==PICK_LEASE_PDF);
+            if(!getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingLeaseAttachment",pending.toString()).commit())throw new IOException("草稿保存失敗");
+            if(request==CAMERA_LEASE_ATTACHMENT){Uri uri=photoUri(file);Intent camera=new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).putExtra(android.provider.MediaStore.EXTRA_OUTPUT,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);camera.setClipData(android.content.ClipData.newRawUri("lease-meter",uri));startActivityForResult(camera,request);}else startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(request==PICK_LEASE_PDF?"application/pdf":"image/*"),request);
+        }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();new File(photoDir(),file).delete();error(new IllegalArgumentException("無法開啟附件來源，表單與原附件保留，請重試"));}
+    }
+    private void leaseAttachmentResult(int request,int result,Intent intent){
+        String raw=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingLeaseAttachment",null);if(raw==null)return;
+        try{JSONObject pending=new JSONObject(raw);String filename=pending.getString("file");boolean pdf=pending.getBoolean("pdf");if(pdf?!LeaseFiles.pdfName(filename):!MeterReadings.photoName(filename))throw new IOException("暫存附件無效");revokeUriPermission(photoUri(filename),Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);File file=new File(photoDir(),filename);
+            if(result!=RESULT_OK||(request!=CAMERA_LEASE_ATTACHMENT&&(intent==null||intent.getData()==null))){file.delete();pending.put("ready",true);getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingLeaseAttachment",pending.toString()).commit();finishLeaseAttachment();return;}
+            Uri uri=intent==null?null:intent.getData();String displayName="租賃合約.pdf";if(pdf)try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst()&&cursor.getString(0)!=null)displayName=cursor.getString(0);}catch(Exception ignored){}final String label=displayName;
+            leaseAttachmentImports.add(filename);pending.put("processing",true);getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingLeaseAttachment",pending.toString()).commit();Toast.makeText(this,"正在讀取附件…",Toast.LENGTH_SHORT).show();
+            new Thread(()->{try{
+                if(request!=CAMERA_LEASE_ATTACHMENT)try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(file)){if(in==null)throw new IOException();byte[] buffer=new byte[8192];long total=0;int n;while((n=in.read(buffer))!=-1){total+=n;if(total>BackupArchive.PHOTO_LIMIT)throw new IOException("附件超過25MB");out.write(buffer,0,n);}}
+                if(pdf)validateContractPdf(file);else {android.graphics.Bitmap bitmap=photoPreview(file);bitmap.recycle();}
+                LeaseAttachments.select(pending.getJSONObject("draft").getJSONObject("attachments"),filename,label,pdf);
+            }catch(Exception e){file.delete();try{pending.put("error","附件無法讀取，請選可開啟、未加密且25MB以下的檔案；原附件與表單保留。");}catch(Exception ignored){}}
+            try{String latest=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingLeaseAttachment",null);if(latest==null||!new JSONObject(latest).getString("file").equals(filename)){file.delete();return;}pending.put("ready",true).put("processing",false);getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingLeaseAttachment",pending.toString()).commit();runOnUiThread(()->{if(!isDestroyed())finishLeaseAttachment();});}catch(Exception e){file.delete();}finally{leaseAttachmentImports.remove(filename);}}).start();
+        }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();error(e);}
+    }
+    private void finishLeaseAttachment(){
+        String raw=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingLeaseAttachment",null);if(raw==null)return;try{JSONObject pending=new JSONObject(raw);if(!pending.optBoolean("ready"))return;JSONObject state=pending.getJSONObject("draft");if(leaseEditor==null)restoreLeaseEditor(state);else if(leaseEditor.token.equals(pending.getString("token"))){leaseEditor.attachments=state.getJSONObject("attachments");leaseEditor.refresh.run();}else{new File(photoDir(),pending.getString("file")).delete();}getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();if(pending.has("error"))error(new IllegalArgumentException(pending.getString("error")));}catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();error(e);}
+    }
+    private void watchLeaseAttachment(){
+        if(isDestroyed()||isFinishing())return;String raw=getSharedPreferences("workflow",MODE_PRIVATE).getString("pendingLeaseAttachment",null);if(raw==null)return;try{JSONObject pending=new JSONObject(raw);if(pending.optBoolean("ready"))finishLeaseAttachment();else if(pending.optBoolean("processing")){if(!leaseAttachmentImports.contains(pending.optString("file"))){new File(photoDir(),pending.optString("file")).delete();pending.put("ready",true).put("processing",false).put("error","附件讀取已中斷，表單與原附件已保留，請重新選取。");getSharedPreferences("workflow",MODE_PRIVATE).edit().putString("pendingLeaseAttachment",pending.toString()).commit();finishLeaseAttachment();}else getWindow().getDecorView().postDelayed(this::watchLeaseAttachment,300);}}catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();}
     }
     private void pickInitialMeterPhoto(JSONObject lease){
         new AlertDialog.Builder(this).setTitle("起始電表照片").setItems(new String[]{"拍照","從相簿選取"},(d,n)->{try{
@@ -1583,6 +1643,7 @@ public class MainActivity extends Activity {
         if(request==EXPORT_WORKBOOK){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerWorkbook(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingWorkbook").commit();return;}
         if(request==EXPORT_REPORT){if(result==RESULT_OK&&intent!=null&&intent.getData()!=null)writeOwnerReport(intent.getData());else getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingReport").commit();return;}
         if(request==VOICE_INPUT){voiceResult(result,intent);return;}
+        if(request==CAMERA_LEASE_ATTACHMENT||request==PICK_LEASE_PHOTO||request==PICK_LEASE_PDF){leaseAttachmentResult(request,result,intent);return;}
         if(request==CAMERA_INITIAL||request==PICK_INITIAL){initialMeterPhotoResult(request,result,intent);return;}
         if(request==CAMERA_EXPENSE||request==PICK_EXPENSE){expensePhotoResult(request,result,intent);return;}
         if(request==PICK_CONTRACT){contractResult(result,intent);return;}
