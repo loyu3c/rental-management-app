@@ -292,6 +292,11 @@ public class MainActivity extends Activity {
         Runnable close=()->confirmDiscard(!baseline.equals(inputFingerprint(inputs)+extras.get()),dialog::dismiss);
         cancel.setOnClickListener(v->close.run());dialog.setOnKeyListener((d,key,event)->{if(key==android.view.KeyEvent.KEYCODE_BACK){if(event.getAction()==android.view.KeyEvent.ACTION_UP)close.run();return true;}return false;});
     }
+    private void allowFormInput(android.app.Dialog dialog){
+        android.view.Window window=dialog.getWindow();if(window==null)return;
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+    }
     private final class FullFormDialog extends AlertDialog {
         private final LinearLayout page;private final Button cancel,positive,neutral;private final View inputs;
         private String baseline;
@@ -307,7 +312,8 @@ public class MainActivity extends Activity {
             for(Button button:new Button[]{cancel,neutral,positive})if(button!=null){LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);if(button!=positive)params.rightMargin=dp(8);footer.addView(button,params);}
             cancel.setOnClickListener(v->cancel());positive.setOnClickListener(v->dismiss());page.addView(footer);baseline=inputFingerprint(inputs);
         }
-        @Override protected void onCreate(Bundle state){super.onCreate(state);setContentView(page);getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));getWindow().setLayout(-1,-1);getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);}
+        @Override protected void onCreate(Bundle state){super.onCreate(state);setContentView(page);getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));getWindow().setLayout(-1,-1);allowFormInput(this);}
+        @Override protected void onStart(){super.onStart();allowFormInput(this);}
         @Override public Button getButton(int which){if(which==BUTTON_POSITIVE)return positive;if(which==BUTTON_NEGATIVE)return cancel;if(which==BUTTON_NEUTRAL)return neutral;return super.getButton(which);}
         @Override public void cancel(){confirmDiscard(!baseline.equals(inputFingerprint(inputs)),()->FullFormDialog.super.cancel());}
     }
@@ -349,7 +355,9 @@ public class MainActivity extends Activity {
     }
     private EditText field(LinearLayout layout, String hint) {
         LinearLayout row=inputRow(layout,fieldLabel(hint));EditText field=new EditText(this);
-        field.setHint(hint);field.setSingleLine(true);field.setTextSize(16);row.addView(field,new LinearLayout.LayoutParams(0,-2,1));return field;
+        field.setHint(hint);field.setSingleLine(true);field.setInputType(InputType.TYPE_CLASS_TEXT);field.setFocusable(true);field.setFocusableInTouchMode(true);field.setShowSoftInputOnFocus(true);field.setTextSize(16);
+        field.setOnClickListener(v->{if(field.isEnabled()&&field.getKeyListener()!=null&&field.onCheckIsTextEditor()){field.requestFocus();field.post(()->{if(field.hasWindowFocus()){android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);keyboard.showSoftInput(field,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);}});}});
+        row.addView(field,new LinearLayout.LayoutParams(0,-2,1));return field;
     }
     private EditText dateField(LinearLayout layout,String label,boolean monthOnly) {
         EditText input=field(layout,label);input.setText(monthOnly?YearMonth.from(today()).toString():today().toString());
@@ -681,7 +689,7 @@ public class MainActivity extends Activity {
                 if(original==null)leases.put(lease);else for(int i=0;i<leases.length();i++)if(leases.optJSONObject(i).optString("id").equals(original.optString("id")))leases.put(i,lease);
                 if (save("leases", leases)) { editor.saved=true;dialog.dismiss();render();refreshPanels(); }
             } catch (Exception e) { error(e); }
-        });dialog.show();dialog.getWindow().setLayout(-1,-1);dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);if(restored!=null)scroll.post(()->scroll.scrollTo(0,restored.optInt("scroll")));
+        });dialog.show();dialog.getWindow().setLayout(-1,-1);allowFormInput(dialog);if(restored!=null)scroll.post(()->scroll.scrollTo(0,restored.optInt("scroll")));
     }
 
 
@@ -807,7 +815,7 @@ public class MainActivity extends Activity {
         };
         for(int i=0;i<names.length;i++){final int index=i;Button b=new Button(this);buttons[i]=b;b.setText(names[i]);b.setTextSize(13);b.setAllCaps(false);b.setIncludeFontPadding(false);b.setStateListAnimator(null);b.setPadding(0,dp(10),0,dp(10));b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(dp(48));tabs.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(v->{tab[0]=index;refresh.run();scroll.scrollTo(0,0);});}
         livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();scroll.post(()->scroll.scrollTo(0,y));});dialog.setOnDismissListener(d->livePanels.remove(dialog));refresh.run();dialog.show();
-        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
+        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);allowFormInput(dialog);}
     }
     private void drawLeaseLedger(LinearLayout content,JSONObject lease,int tab) {
         content.removeAllViews();LinearLayout previous=body;body=content;
@@ -1336,7 +1344,7 @@ public class MainActivity extends Activity {
                     if(!old.optBoolean("void")&&old.getString("date").equals(row.getString("date"))&&old.getString("accountId").equals(row.getString("accountId"))&&old.getString("category").equals(row.getString("category"))&&old.getString("description").equals(row.getString("description"))&&old.getLong("amount")==row.getLong("amount"))throw new IllegalArgumentException("相同日期、帳戶、項目與金額已有紀錄，請核對；若為另一筆請填交易辨識。");}
                 if(original==null)rows.put(row);else rows=ExpenseEdits.replace(rows,original,row,java.time.Instant.now().toString());if(saveChecked("expenses",rows)){savedPhotos[0]=true;for(String name:ownedPhotos)if(!photoNames.contains(name))new File(photoDir(),name).delete();dialog.dismiss();render();}
             }catch(Exception e){error(e);}}).show();
-        }catch(Exception e){error(e);}});dialog.show();dialog.getWindow().setLayout(-1,-1);dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }catch(Exception e){error(e);}});dialog.show();dialog.getWindow().setLayout(-1,-1);allowFormInput(dialog);
     }
     private void transferForm() {transferForm(null);}
     private void transferForm(JSONObject draft) {
@@ -1376,7 +1384,7 @@ public class MainActivity extends Activity {
         ScrollView scroll=new ScrollView(this);layout.setPadding(0,dp(8),0,dp(12));scroll.addView(layout);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         if(refresh!=null)livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();heading.setText(currentTitle.get());scroll.post(()->scroll.scrollTo(0,y));});
         dialog.setOnDismissListener(d->livePanels.remove(dialog));dialog.show();
-        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
+        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);allowFormInput(dialog);}
     }
     private void accountsDialog() {
         LinearLayout layout=form();Runnable refresh=()->drawAccounts(layout);refresh.run();showPanel("資金帳戶",layout,refresh);
