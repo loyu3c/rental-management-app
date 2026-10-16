@@ -195,6 +195,9 @@ public class MainActivity extends Activity {
     private static final class RecordMenu {
         final List<String> labels=new ArrayList<>();final List<Runnable> actions=new ArrayList<>();
     }
+    private LinearLayout.LayoutParams headerTitleParams(){
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);params.setMargins(dp(12),0,dp(12),0);return params;
+    }
     private Button iconButton(int icon,String description){
         Button button=styledButton("",false,false);button.setPadding(dp(12),dp(12),dp(12),dp(12));
         android.graphics.drawable.Drawable image=getDrawable(icon).mutate();image.setTint(Color.rgb(100,67,43));image.setBounds(0,0,dp(24),dp(24));button.setCompoundDrawables(image,null,null,null);
@@ -249,7 +252,7 @@ public class MainActivity extends Activity {
     }
     private void guardForm(android.app.Dialog dialog,View inputs,java.util.function.Supplier<String> extras,Button cancel){
         View content=dialog.findViewById(android.R.id.content);
-        if(content instanceof android.view.ViewGroup){View first=((android.view.ViewGroup)content).getChildAt(0);if(first instanceof LinearLayout){LinearLayout page=(LinearLayout)first;View title=page.getChildAt(0);if(title instanceof TextView){page.removeView(title);LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(8),0,dp(8),0);Button back=iconButton(R.drawable.action_back,"取消並返回");back.setOnClickListener(v->cancel.performClick());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));title.setPadding(dp(4),dp(10),dp(4),dp(10));toolbar.addView(title,new LinearLayout.LayoutParams(0,-2,1));page.addView(toolbar,0);}}}
+        if(content instanceof android.view.ViewGroup){View first=((android.view.ViewGroup)content).getChildAt(0);if(first instanceof LinearLayout){LinearLayout page=(LinearLayout)first;View title=page.getChildAt(0);if(title instanceof TextView){page.removeView(title);LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(8),0,dp(8),0);Button back=iconButton(R.drawable.action_back,"取消並返回");back.setOnClickListener(v->cancel.performClick());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));title.setPadding(dp(4),dp(10),dp(4),dp(10));toolbar.addView(title,headerTitleParams());page.addView(toolbar,0);}}}
         String baseline=inputFingerprint(inputs)+extras.get();
         Runnable close=()->confirmDiscard(!baseline.equals(inputFingerprint(inputs)+extras.get()),dialog::dismiss);
         cancel.setOnClickListener(v->close.run());dialog.setOnKeyListener((d,key,event)->{if(key==android.view.KeyEvent.KEYCODE_BACK){if(event.getAction()==android.view.KeyEvent.ACTION_UP)close.run();return true;}return false;});
@@ -262,7 +265,7 @@ public class MainActivity extends Activity {
             inputs=content;compactInputs(content);if(content instanceof ScrollView){View child=((ScrollView)content).getChildAt(0);if(child!=null)child.setPadding(0,dp(4),0,dp(8));}else content.setPadding(0,dp(4),0,dp(8));page=form();page.setBackgroundColor(Color.rgb(248,244,237));page.setPadding(0,0,0,0);
             LinearLayout header=new LinearLayout(MainActivity.this);header.setPadding(dp(8),dp(4),dp(12),dp(4));header.setGravity(Gravity.CENTER_VERTICAL);
             Button back=iconButton(R.drawable.action_back,"取消並返回");back.setOnClickListener(v->cancel());header.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
-            TextView heading=text(title,20,Color.rgb(77,57,39));heading.setTypeface(null,Typeface.BOLD);header.addView(heading,new LinearLayout.LayoutParams(0,-2,1));page.addView(header);
+            TextView heading=text(title,20,Color.rgb(77,57,39));heading.setTypeface(null,Typeface.BOLD);header.addView(heading,headerTitleParams());page.addView(header);
             ScrollView scroll;if(content instanceof ScrollView)scroll=(ScrollView)content;else{scroll=new ScrollView(MainActivity.this);scroll.addView(content);}scroll.setFillViewport(true);scroll.setPadding(dp(12),0,dp(12),dp(8));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
             LinearLayout footer=new LinearLayout(MainActivity.this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));
             cancel=styledButton("取消",false,false);positive=styledButton(primary,true,false);neutral=secondary==null?null:styledButton(secondary,false,false);
@@ -762,7 +765,7 @@ public class MainActivity extends Activity {
             JSONObject current=find("leases",leaseId);header.removeAllViews();
             LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);header.addView(toolbar);
             Button back=iconButton(R.drawable.action_back,"返回上一頁");back.setOnClickListener(v->dialog.dismiss());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
-            TextView heading=text(current==null?"租約已不存在":current.optString("unitCodeSnapshot")+" · "+current.optString("tenant"),20,Color.rgb(90,61,37));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
+            TextView heading=text(current==null?"租約已不存在":current.optString("unitCodeSnapshot")+"\n"+current.optString("tenant"),20,Color.rgb(90,61,37));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,headerTitleParams());
             if(current!=null){Button more=iconButton(R.drawable.action_more,"租約更多操作");toolbar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{JSONObject latest=find("leases",leaseId);if(latest==null)return;RecordMenu menu=new RecordMenu();JSONObject unit=find("units",latest.optString("unitId"));if(unit!=null&&!latest.has("terminatedOn")){menu.labels.add("修改租約");menu.actions.add(()->leaseForm(unit,latest));}menu.labels.add("租客報表與分享");menu.actions.add(()->tenantReport(leaseId));openOperations(more,menu);});header.addView(text(current.has("terminatedOn")?"已退租 · "+current.optString("terminatedOn"):"租期 "+current.optString("start")+" ～ "+current.optString("end"),13,Color.DKGRAY));}
             for(int i=0;i<buttons.length;i++)if(buttons[i]!=null){buttons[i].setTextColor(Color.rgb(90,61,37));GradientDrawable pill=new GradientDrawable();pill.setCornerRadius(dp(12));pill.setColor(i==tab[0]?Color.rgb(255,252,247):Color.TRANSPARENT);buttons[i].setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.argb(25,112,77,50)),pill,null));buttons[i].setTypeface(null,i==tab[0]?Typeface.BOLD:Typeface.NORMAL);buttons[i].setContentDescription(names[i]+(i==tab[0]?"，目前分頁":"，切換分頁"));buttons[i].setSelected(i==tab[0]);}
             drawLeaseLedger(content,current,tab[0]);
@@ -1341,7 +1344,7 @@ public class MainActivity extends Activity {
         LinearLayout page=form();page.setPadding(dp(16),dp(12),dp(16),dp(12));page.setBackgroundColor(Color.rgb(248,244,237));
         AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();
         LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);Button back=iconButton(R.drawable.action_back,"返回上一頁");back.setOnClickListener(v->dialog.dismiss());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
-        TextView heading=text(title,20,Color.rgb(83,60,40));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));page.addView(toolbar);
+        TextView heading=text(title,20,Color.rgb(83,60,40));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,headerTitleParams());page.addView(toolbar);
         ScrollView scroll=new ScrollView(this);layout.setPadding(0,dp(8),0,dp(12));scroll.addView(layout);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         if(refresh!=null)livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();heading.setText(currentTitle.get());scroll.post(()->scroll.scrollTo(0,y));});
         dialog.setOnDismissListener(d->livePanels.remove(dialog));dialog.show();
