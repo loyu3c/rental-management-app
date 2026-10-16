@@ -19,8 +19,8 @@ public final class Ledger {
         LocalDate start=LocalDate.parse(lease.getString("start")),end=LocalDate.parse(lease.getString("end"));
         if(month.atEndOfMonth().isBefore(start)||month.atDay(1).isAfter(end))throw new IllegalArgumentException("月份不在租期內");
         JSONArray added=new JSONArray();
-        JSONObject rental=forMonth(invoices,lease.getString("id"),month,"租金"),utility=forMonth(invoices,lease.getString("id"),month,"水電");
-        if(rental==null) {rental=invoice(lease,month,false,rent,0,0);added.put(rental);}
+        JSONObject rental=forMonth(invoices,lease.getString("id"),RentTerms.rentMonth(lease,month),"租金"),utility=forMonth(invoices,lease.getString("id"),month,"水電");
+        if(rental==null) {rental=invoice(lease,RentTerms.rentMonth(lease,month),false,rent,0,0);if(RentTerms.scheduled(lease)){JSONObject period=RentTerms.period(lease,month);rental.put("due",period.getString("due")).put("periodStart",period.getString("from")).put("periodEnd",period.getString("to"));}added.put(rental);}
         if(utility==null&&lease.getString("utilities").equals("管理者代收水電")) {
             if(water<0)throw new IllegalArgumentException("請填固定月水費，不能將未知水費當作0");
             JSONObject settings=new JSONObject(lease.toString()).put("water",water);
@@ -113,6 +113,7 @@ public final class Ledger {
             if(id.isEmpty()||byId.put(id,r)!=null||!leases.contains(lid)||!Arrays.asList("租金","水電").contains(kind)
                 ||!unique.add(lid+"|"+r.getString("month")+"|"+kind)) throw new IllegalArgumentException("帳單資料重複或關聯錯誤");
             YearMonth.parse(r.getString("month")); LocalDate.parse(r.getString("due")); total(r);
+            if(r.has("periodStart")||r.has("periodEnd")){LocalDate from=LocalDate.parse(r.getString("periodStart")),to=LocalDate.parse(r.getString("periodEnd"));if(!kind.equals("租金")||to.isBefore(from)||!YearMonth.from(from).toString().equals(r.getString("month")))throw new IllegalArgumentException("租金涵蓋日期無效");}
             if(kind.equals("租金")&&(money(r,"water")!=0||money(r,"electricity")!=0)) throw new IllegalArgumentException();
             if(kind.equals("水電")) {
                 if(money(r,"rent")!=0||money(r,"current")<money(r,"previous")
@@ -132,3 +133,4 @@ public final class Ledger {
         for(JSONObject r:byId.values()) if(paid(r.getString("id"),receipts)>total(r)) throw new IllegalArgumentException("帳單超收");
     }
 }
+

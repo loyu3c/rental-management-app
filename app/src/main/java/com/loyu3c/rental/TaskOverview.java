@@ -29,11 +29,13 @@ public final class TaskOverview {
             if(overdue>0)add(tasks,lease,"逾期待收","已到期帳單未付 $"+overdue+"（租金與水電）");
             LocalDate start=LocalDate.parse(lease.getString("start")),end=LocalDate.parse(lease.getString("end"));
             if(start.isAfter(today)||end.isBefore(month.atDay(1)))continue;
-            boolean rent=Ledger.forMonth(invoices,id,month,"租金")!=null,utility=Ledger.forMonth(invoices,id,month,"水電")!=null;
+            boolean rent=Ledger.forMonth(invoices,id,RentTerms.rentMonth(lease,month),"租金")!=null,utility=Ledger.forMonth(invoices,id,month,"水電")!=null;
             boolean collect="管理者代收水電".equals(lease.optString("utilities"));
-            if(!rent||(collect&&!utility))add(tasks,lease,"未完成開單",month+" 尚缺"+(!rent?"租金":"")+(!rent&&collect&&!utility?"、":"")+(collect&&!utility?"水電":"")+"帳單");
+            if(RentTerms.scheduled(lease)&&!rent){JSONObject period=RentTerms.period(lease,month);add(tasks,lease,"本期租金待開單",period.getString("from")+" ～ "+period.getString("to")+" · 應繳 "+period.getString("due")+" · 建議租金 $"+period.getLong("amount"));}
+            if((!rent&&!RentTerms.scheduled(lease))||(collect&&!utility))add(tasks,lease,"未完成開單",month+" 尚缺"+(!rent&&!RentTerms.scheduled(lease)?"租金":"")+(!rent&&!RentTerms.scheduled(lease)&&collect&&!utility?"、":"")+(collect&&!utility?"水電":"")+"帳單");
             if(collect&&!utility&&MeterReadings.latest(rows(backup,"meterReadings"),id,month.toString())==null)add(tasks,lease,"待抄電表",month+" 尚無有效抄表紀錄，可拍照留存依據");
         }
         return tasks;
     }
 }
+

@@ -1,0 +1,9 @@
+package com.loyu3c.rental;
+import org.json.*;import org.junit.Test;import static org.junit.Assert.*;import java.nio.file.*;import java.io.*;
+public class InitialMeterPhotosTest {
+    private String name="12345678-1234-1234-1234-123456789abc.jpg";
+    private JSONObject backup()throws Exception{return new JSONObject().put("version",11).put("meterReadings",new JSONArray()).put("leases",new JSONArray().put(new JSONObject().put("initialMeterPhoto",name)));}
+    @Test public void initialPhotoSurvivesFullBackupRoundTrip()throws Exception{File source=Files.createTempDirectory("initial").toFile(),stage=Files.createTempDirectory("restored").toFile();byte[] photo={1,2,3};Files.write(new File(source,name).toPath(),photo);ByteArrayOutputStream out=new ByteArrayOutputStream();BackupArchive.write(out,backup(),source);JSONObject restored=BackupArchive.read(new ByteArrayInputStream(out.toByteArray()),stage);assertTrue(InitialMeterPhotos.files(restored).contains(name));assertArrayEquals(photo,Files.readAllBytes(new File(stage,name).toPath()));}
+    @Test public void missingInitialPhotoAndJsonOnlyBackupRejected()throws Exception{try{BackupArchive.write(new ByteArrayOutputStream(),backup(),Files.createTempDirectory("empty").toFile());fail();}catch(IOException expected){}try{BackupArchive.read(new ByteArrayInputStream(backup().toString().getBytes("UTF-8")),Files.createTempDirectory("empty").toFile());fail();}catch(IOException expected){}}
+    @Test public void traversalAndDuplicateReferencesRejected()throws Exception{JSONObject b=backup();b.getJSONArray("leases").getJSONObject(0).put("initialMeterPhoto","../outside.jpg");try{InitialMeterPhotos.files(b);fail();}catch(IllegalArgumentException expected){}b=backup();b.getJSONArray("leases").put(new JSONObject().put("initialMeterPhoto",name));try{InitialMeterPhotos.files(b);fail();}catch(IllegalArgumentException expected){}}
+}

@@ -30,7 +30,9 @@ public final class Settlements {
             if(Ledger.money(r,"amount")!=Ledger.allocated(r))throw new IllegalArgumentException("尚有未分配預收款，請先處理分配；本版尚不支援預收租金退款");
             if(LocalDate.parse(r.getString("date")).isAfter(day))throw new IllegalArgumentException("退租日後已有收款，請核對日期");}
         for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);if(leaseId.equals(r.getString("leaseId"))&&!r.optBoolean("void")&&LocalDate.parse(r.getString("date")).isAfter(day))throw new IllegalArgumentException("退租日後已有押金紀錄，請核對日期");}
-        JSONObject monthly=Ledger.monthlyPlan(lease,month,finalRent,water,prior,current,invoices,receipts);JSONArray added=monthly.getJSONArray("added");for(int i=0;i<added.length();i++){JSONObject bill=added.getJSONObject(i);if(b.has("meterReadings")&&bill.getString("kind").equals("水電")){JSONObject meter=MeterReadings.latest(b.getJSONArray("meterReadings"),leaseId,month.toString());if(meter!=null&&meter.getLong("previous")==bill.getLong("previous")&&meter.getLong("current")==bill.getLong("current"))bill.put("meterReadingId",meter.getString("id"));}Ledger.addUnique(invoices,bill);}
+        for(int i=0;i<invoices.length();i++){JSONObject bill=invoices.getJSONObject(i);if(leaseId.equals(bill.optString("leaseId"))&&bill.has("periodEnd")&&LocalDate.parse(bill.getString("periodEnd")).isAfter(day))throw new IllegalArgumentException("本期租金涵蓋退租日之後，請先核對帳單；已收預付租金退款本版尚不支援");}
+        JSONObject billingLease=new JSONObject(lease.toString());if(RentTerms.scheduled(lease))billingLease.put("end",date);
+        JSONObject monthly=Ledger.monthlyPlan(billingLease,month,finalRent,water,prior,current,invoices,receipts);JSONArray added=monthly.getJSONArray("added");for(int i=0;i<added.length();i++){JSONObject bill=added.getJSONObject(i);if(b.has("meterReadings")&&bill.getString("kind").equals("水電")){JSONObject meter=MeterReadings.latest(b.getJSONArray("meterReadings"),leaseId,month.toString());if(meter!=null&&meter.getLong("previous")==bill.getLong("previous")&&meter.getLong("current")==bill.getLong("current"))bill.put("meterReadingId",meter.getString("id"));}Ledger.addUnique(invoices,bill);}
         JSONArray lines=new JSONArray();long debt=0;
         for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(!leaseId.equals(r.getString("leaseId")))continue;long paid=Ledger.paid(r.getString("id"),receipts),left=Ledger.total(r)-paid;
             debt=Math.addExact(debt,left);lines.put(new JSONObject().put("invoiceId",r.getString("id")).put("month",r.getString("month")).put("kind",r.getString("kind")).put("total",Ledger.total(r)).put("rent",r.getLong("rent")).put("water",r.getLong("water")).put("electricity",r.getLong("electricity")).put("paidBefore",paid).put("remaining",left));}
@@ -84,3 +86,4 @@ public final class Settlements {
         for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);if(r.getString("kind").equals("押金抵付費用")&&!ids.contains(r.optString("settlementId")))throw new IllegalArgumentException("缺少押金抵付來源");}
     }
 }
+

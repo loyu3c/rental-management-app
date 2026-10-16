@@ -1,0 +1,11 @@
+package com.loyu3c.rental;
+import org.json.*;import org.junit.Test;import static org.junit.Assert.*;import java.time.*;
+public class RentalUnitsTest {
+    private JSONObject u(String id,String type)throws Exception{return new JSONObject().put("id",id).put("propertyId","P").put("type",type);}
+    private JSONArray units()throws Exception{return new JSONArray().put(u("W","整棟")).put(u("A","房間")).put(u("B","房間")).put(u("C","房間")).put(u("D","房間")).put(u("P","車格"));}
+    private JSONArray leases(String id,String end)throws Exception{return new JSONArray().put(new JSONObject().put("unitId",id).put("start","2026-01-01").put("end",end));}
+    private LocalDate now=LocalDate.of(2026,10,16);
+    @Test public void modesDoNotDoubleCountAndPreserveParking()throws Exception{JSONArray source=units(),whole=RentalUnits.switchMode(source,new JSONArray(),"P",true,now);assertArrayEquals(new int[]{1,1},Occupancy.counts(whole,leases("W","2026-12-31"),null,now));assertEquals("停用出租",Occupancy.status(whole,new JSONArray(),whole.getJSONObject(1),now));JSONArray rooms=RentalUnits.switchMode(whole,leases("W","2026-10-15"),"P",false,now);assertArrayEquals(new int[]{1,4},Occupancy.counts(rooms,leases("A","2026-12-31"),null,now));assertTrue(RentalUnits.enabled(source.getJSONObject(1)));assertTrue(RentalUnits.enabled(rooms.getJSONObject(5)));}
+    @Test public void currentAndFutureLeasesBlockDisableAtomically()throws Exception{JSONArray source=units();String before=source.toString();for(String end:new String[]{"2026-10-16","2027-01-01"})try{RentalUnits.switchMode(source,leases("W",end),"P",false,now);fail();}catch(IllegalArgumentException expected){}assertEquals(before,source.toString());}
+    @Test public void individualDisableAndConflictingEnable()throws Exception{JSONArray rooms=RentalUnits.switchMode(units(),new JSONArray(),"P",false,now);JSONArray off=RentalUnits.setEnabled(rooms,new JSONArray(),"A",false,now);assertArrayEquals(new int[]{0,4},Occupancy.counts(off,new JSONArray(),null,now));try{RentalUnits.setEnabled(rooms,new JSONArray(),"W",true,now);fail();}catch(IllegalArgumentException expected){}try{RentalUnits.setEnabled(rooms,leases("A","2027-01-01"),"A",false,now);fail();}catch(IllegalArgumentException expected){}}
+}
