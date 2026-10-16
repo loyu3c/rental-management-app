@@ -151,11 +151,26 @@ public class MainActivity extends Activity {
 
     private void secondaryTabs(LinearLayout root){
         LinearLayout bar=new LinearLayout(this);bar.setPadding(dp(3),dp(3),dp(3),dp(3));bar.setBackground(surface(Color.rgb(237,229,217),14));
-        String[] names=SECTION_NAMES[selected];for(int i=0;i<names.length;i++){final int index=i;Button button=styledButton(names[i],false,false);button.setTextSize(14);button.setPadding(dp(6),dp(8),dp(6),dp(8));button.setBackground(surface(i==sections[selected]?Color.rgb(255,252,247):Color.rgb(237,229,217),12));button.setSelected(i==sections[selected]);button.setContentDescription(names[i]+(i==sections[selected]?"，目前頁籤":"，切換頁籤"));button.setOnClickListener(v->{sections[selected]=index;render();});bar.addView(button,new LinearLayout.LayoutParams(0,-2,1));}
-        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(6),0,dp(8));root.addView(bar,params);
+        int[][] icons={{},{R.drawable.action_document,R.drawable.section_receipt},{R.drawable.action_document,R.drawable.section_swap,R.drawable.section_wallet},{R.drawable.section_building,R.drawable.section_person},{R.drawable.section_person,R.drawable.section_tenant,R.drawable.section_chart}};
+        String[] names=SECTION_NAMES[selected];
+        for(int i=0;i<names.length;i++){
+            final int index=i;boolean active=i==sections[selected];
+            LinearLayout button=new LinearLayout(this);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setMinimumHeight(dp(56));button.setPadding(dp(6),dp(7),dp(6),dp(7));button.setBackground(surface(active?Color.rgb(255,252,247):Color.rgb(237,229,217),12));
+            ImageView icon=new ImageView(this);icon.setImageResource(icons[selected][i]);icon.setColorFilter(Color.rgb(100,67,43));button.addView(icon,new LinearLayout.LayoutParams(dp(18),dp(18)));
+            TextView label=text(names[i],13,Color.rgb(90,61,37));label.setGravity(Gravity.CENTER);label.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);label.setPadding(0,dp(4),0,0);label.setIncludeFontPadding(false);button.addView(label,new LinearLayout.LayoutParams(-1,-2));
+            button.setClickable(true);button.setFocusable(true);button.setSelected(active);button.setContentDescription(names[i]+(active?"，目前頁籤":"，切換頁籤"));button.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);button.setOnClickListener(v->{sections[selected]=index;render();});
+            LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);params.setMargins(dp(2),0,dp(2),0);bar.addView(button,params);
+        }
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(6),0,dp(10));root.addView(bar,params);
+    }
+    private View centeredIconAction(String title,int iconId,Runnable run){
+        LinearLayout button=new LinearLayout(this);button.setGravity(Gravity.CENTER);button.setMinimumHeight(dp(48));button.setPadding(dp(12),dp(8),dp(12),dp(8));button.setBackground(surface(Color.rgb(255,252,247),14));
+        ImageView icon=new ImageView(this);icon.setImageResource(iconId);icon.setColorFilter(Color.rgb(100,67,43));LinearLayout.LayoutParams iconParams=new LinearLayout.LayoutParams(dp(20),dp(20));iconParams.rightMargin=dp(8);button.addView(icon,iconParams);
+        TextView label=text(title,15,Color.rgb(100,67,43));label.setPadding(0,0,0,0);label.setTypeface(null,Typeface.BOLD);button.addView(label);
+        button.setClickable(true);button.setFocusable(true);button.setContentDescription(title);button.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);button.setOnClickListener(v->run.run());return button;
     }
     private void listHeader(String title,String addLabel,Runnable add){
-        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView label=text(title,19,Color.rgb(77,57,39));label.setTypeface(null,Typeface.BOLD);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));Button button=styledButton("＋ "+addLabel,false,false);button.setTextSize(13);button.setOnClickListener(v->add.run());row.addView(button,new LinearLayout.LayoutParams(-2,-2));body.addView(row,new LinearLayout.LayoutParams(-1,-2));
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView label=text(title,19,Color.rgb(77,57,39));label.setTypeface(null,Typeface.BOLD);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));Button button=styledButton("＋ "+addLabel,false,false);button.setTextSize(13);button.setOnClickListener(v->add.run());row.addView(button,new LinearLayout.LayoutParams(-2,-2));LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);rowParams.setMargins(0,dp(4),0,dp(8));body.addView(row,rowParams);
     }
     private void settingsScreen(){
         LinearLayout layout=form();LinearLayout previous=body;body=layout;
@@ -1103,9 +1118,9 @@ public class MainActivity extends Activity {
         if(sections[2]==2){listHeader("資金帳戶","新增帳戶",this::accountForm);LinearLayout accounts=new LinearLayout(this);accounts.setOrientation(LinearLayout.VERTICAL);body.addView(accounts);drawAccounts(accounts);return;}
         if(data("accounts").length()==0){card("尚未設定帳戶","先建立銀行或現金帳戶，才能記錄支出與轉帳。");primaryAction("＋ 新增帳戶",this::accountForm);return;}
         boolean transferPage=sections[2]==1;listHeader(transferPage?"轉帳紀錄":"支出紀錄",transferPage?"新增轉帳":"新增支出",transferPage?this::transferForm:this::expenseForm);
-        Button voice=styledButton("語音記帳",false,false);voice.setCompoundDrawablesWithIntrinsicBounds(R.drawable.action_voice,0,0,0);voice.setOnClickListener(v->voiceEditor(""));body.addView(voice,new LinearLayout.LayoutParams(-1,-2));
+        View voice=centeredIconAction("語音記帳",R.drawable.action_voice,()->voiceEditor(""));LinearLayout.LayoutParams voiceParams=new LinearLayout.LayoutParams(-1,-2);voiceParams.setMargins(0,0,0,dp(8));body.addView(voice,voiceParams);
         LinearLayout page=body,filters=new LinearLayout(this);filters.setOrientation(LinearLayout.VERTICAL);filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);
-        Button filterToggle=styledButton("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"),false,false);filterToggle.setOnClickListener(v->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?View.VISIBLE:View.GONE);filterToggle.setText("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"));filterToggle.setContentDescription(expenseFiltersOpen?"搜尋與篩選，已展開":"搜尋與篩選，已收合");});page.addView(filterToggle,new LinearLayout.LayoutParams(-1,-2));page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
+        Button filterToggle=styledButton("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"),false,false);filterToggle.setOnClickListener(v->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?View.VISIBLE:View.GONE);filterToggle.setText("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"));filterToggle.setContentDescription(expenseFiltersOpen?"搜尋與篩選，已展開":"搜尋與篩選，已收合");});LinearLayout.LayoutParams filterParams=new LinearLayout.LayoutParams(-1,-2);filterParams.setMargins(0,0,0,dp(6));page.addView(filterToggle,filterParams);page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
         EditText search=field(body,"搜尋項目、帳戶或不動產");search.setText(expenseSearch);
         Spinner type=choice(body,"紀錄類型",new String[]{"全部紀錄","有效紀錄","已撤銷"});type.setSelection(expenseFilter);
         Spinner scope=choice(body,"月份範圍",new String[]{"全部月份","指定月份"});scope.setSelection(expenseMonth.isEmpty()?0:1);
