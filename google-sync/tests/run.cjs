@@ -5,3 +5,5 @@ assert.equal(post({version:1,syncId:'test',token,mode:'sync',report}).ok,true);a
 existing=req.filter(r=>r.addSheet).map(r=>({properties:r.addSheet.properties}));assert.equal(post({version:1,syncId:'retry',token,mode:'sync',report}).ok,true);assert.equal(batches.length,2);assert.equal(batches[1].requests.filter(r=>r.addSheet).length,0);assert.equal(batches[1].requests.filter(r=>r.updateCells&&r.updateCells.range).length,4);
 assert.equal(post({version:1,syncId:'bad',token,mode:'sync',report:{...report,month:'2026-99'}}).code,'INVALID_REPORT');assert.equal(batches.length,2);assert.equal(post({version:1,syncId:'bad',token,mode:'sync',report:{...report,total:{...row,cash:1.5}}}).code,'INVALID_REPORT');assert.equal(batches.length,2);
 console.log('Google sync contract tests passed: auth, check, atomic requests, replay, formatting, privacy, invalid data.');
+
+require('./shared.cjs');

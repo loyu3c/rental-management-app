@@ -6,8 +6,8 @@ android {
         applicationId 'com.loyu3c.rental.preview'
         minSdk 26
         targetSdk 34
-        versionCode 45
-        versionName '0.33.1-preview'
+        versionCode 46
+        versionName '0.34.0-preview'
     }
     signingConfigs {
         stable {

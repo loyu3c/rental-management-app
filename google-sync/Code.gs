@@ -37,8 +37,8 @@ function requests_(tables,existing) {
 function doPost(e) {
   let lock;
   try {
-    if(!e||!e.postData||e.postData.contents.length>2000000)return output_({ok:false,code:'INVALID_REQUEST'});
-    const request=JSON.parse(e.postData.contents);const properties=PropertiesService.getScriptProperties();const token=properties.getProperty('SYNC_TOKEN'),id=properties.getProperty('SPREADSHEET_ID');
+    if(!e||!e.postData||e.postData.contents.length>37000000)return output_({ok:false,code:'INVALID_REQUEST'});
+    const request=JSON.parse(e.postData.contents);if(request.version===2)return output_(sharedPost_(request));const properties=PropertiesService.getScriptProperties();const token=properties.getProperty('SYNC_TOKEN'),id=properties.getProperty('SPREADSHEET_ID');
     if(!token||!id)return output_({ok:false,code:'NOT_CONFIGURED'});
     if(!sameToken_(request.token,token))return output_({ok:false,code:'UNAUTHORIZED'});
     if(request.version!==1||typeof request.syncId!=='string'||!/^[a-zA-Z0-9-]{1,80}$/.test(request.syncId))return output_({ok:false,code:'INVALID_REQUEST'});
@@ -53,3 +53,4 @@ function doPost(e) {
   } catch(error) { return output_({ok:false,code:error.message==='INVALID_REPORT'?'INVALID_REPORT':'SYNC_FAILED'}); }
   finally {if(lock)lock.releaseLock();}
 }
+
