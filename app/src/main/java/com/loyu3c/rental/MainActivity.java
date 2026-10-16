@@ -44,6 +44,9 @@ public class MainActivity extends Activity {
     }
 
     private String propertyId="", unitId="";
+    private ScrollView mainScroll;private String renderedPageKey="";
+    private final Map<String,Integer> pageScrolls=new HashMap<>(),propertyFilters=new HashMap<>(),propertySorts=new HashMap<>();
+    private final Map<String,String> propertySearches=new HashMap<>();
     private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings","expenseCategories","owners","reportShares"};
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Taipei")); }
     private static final int EXPORT = 41, IMPORT = 42;
@@ -85,12 +88,14 @@ public class MainActivity extends Activity {
         params.setMargins(0, dp(8), 0, dp(8)); body.addView(box, params); return box;
     }
     private void render() {
+        if(mainScroll!=null)pageScrolls.put(renderedPageKey,mainScroll.getScrollY());
+        renderedPageKey=selected+":"+propertyId+":"+unitId;
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(248, 244, 237)); root.setPadding(dp(16), dp(16), dp(16), dp(8));
         TextView heading = text("暖色帳本 / " + tabs[selected], 26, Color.rgb(83, 60, 40));
         heading.setTypeface(null, Typeface.BOLD); root.addView(heading);
         root.addView(text("整合測試版 · 資料存在手機；"+(getSharedPreferences("googleSync",MODE_PRIVATE).contains("connection")?"Google已設定（手動同步）":"Google同步未設定"), 13, Color.rgb(137, 83, 15)));
-        ScrollView scroll = new ScrollView(this);
+        ScrollView scroll = new ScrollView(this);mainScroll=scroll;
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         if (selected == 0) {
@@ -138,6 +143,7 @@ public class MainActivity extends Activity {
             nav.addView(button,new LinearLayout.LayoutParams(0,-2,1));
         }
         root.addView(nav); setContentView(root);
+        int restoreY=pageScrolls.getOrDefault(renderedPageKey,0);scroll.post(()->scroll.scrollTo(0,restoreY));
     }
 
     private JSONArray data(String key) {
@@ -186,19 +192,92 @@ public class MainActivity extends Activity {
         for(int i=0;i<labels.length;i++){final Runnable run=runs[i];Button item=styledButton(labels[i]+"  ›",false,false);item.setTextSize(14);item.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);item.setOnClickListener(v->run.run());LinearLayout.LayoutParams itemParams=new LinearLayout.LayoutParams(-1,-2);itemParams.setMargins(dp(8),dp(4),dp(8),dp(4));items.addView(item,itemParams);}
         toggle.setOnClickListener(v->{boolean open=items.getVisibility()!=android.view.View.VISIBLE;items.setVisibility(open?android.view.View.VISIBLE:android.view.View.GONE);toggle.setText(title+(open?"  ▴":"  ▾"));toggle.setContentDescription(title+(open?"，已展開":"，已收合"));});toggle.setContentDescription(title+"，已收合");
     }
-    private void cardAction(LinearLayout box,String label,Runnable run) {
-        LinearLayout buttons;
-        if(box.getTag() instanceof LinearLayout)buttons=(LinearLayout)box.getTag();
-        else {
-            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.BOTTOM|Gravity.END);
-            View last=box.getChildCount()>1?box.getChildAt(1):null;
-            if(last instanceof TextView){box.removeView(last);last.setPadding(0,dp(4),dp(10),0);row.addView(last,new LinearLayout.LayoutParams(0,-2,1));}
-            else {View spacer=new View(this);row.addView(spacer,new LinearLayout.LayoutParams(0,0,1));}
-            buttons=new LinearLayout(this);buttons.setOrientation(LinearLayout.VERTICAL);buttons.setGravity(Gravity.END);row.addView(buttons,new LinearLayout.LayoutParams(-2,-2));box.addView(row,Math.min(1,box.getChildCount()),new LinearLayout.LayoutParams(-1,-2));box.setTag(buttons);
-        }
-        Button button=styledButton(label,false,label.startsWith("撤銷"));button.setTextSize(13);button.setPadding(dp(12),dp(8),dp(12),dp(8));button.setMinimumWidth(dp(64));button.setOnClickListener(v->run.run());button.setContentDescription(label+"，此筆紀錄");
-        buttons.addView(button,new LinearLayout.LayoutParams(-2,-2));
+    private static final class RecordMenu {
+        final List<String> labels=new ArrayList<>();final List<Runnable> actions=new ArrayList<>();
     }
+    private Button iconButton(int icon,String description){
+        Button button=styledButton("",false,false);button.setPadding(dp(12),dp(12),dp(12),dp(12));
+        android.graphics.drawable.Drawable image=getDrawable(icon).mutate();image.setTint(Color.rgb(100,67,43));image.setBounds(0,0,dp(24),dp(24));button.setCompoundDrawables(image,null,null,null);
+        button.setBackground(surface(Color.rgb(255,252,247),12));button.setContentDescription(description);return button;
+    }
+    private int operationIcon(String label){
+        if(label.startsWith("撤銷")||label.startsWith("移除")||label.startsWith("停止"))return R.drawable.action_cancel;
+        if(label.contains("修改紀錄"))return R.drawable.action_history;
+        if(label.startsWith("修改")||label.startsWith("更換"))return R.drawable.action_edit;
+        if(label.contains("照片")||label.contains("相簿")||label.contains("拍照"))return R.drawable.action_photo;
+        if(label.contains("PDF")||label.contains("合約"))return R.drawable.action_document;
+        if(label.contains("報表")||label.contains("分享")||label.contains("連結"))return R.drawable.action_share;
+        return R.drawable.action_more;
+    }
+    private void openOperations(View anchor,RecordMenu items){
+        PopupMenu popup=new PopupMenu(this,anchor);
+        if(android.os.Build.VERSION.SDK_INT>=29)popup.setForceShowIcon(true);
+        for(int i=0;i<items.labels.size();i++){
+            String label=items.labels.get(i);android.view.MenuItem item=popup.getMenu().add(0,i,i,label);item.setIcon(operationIcon(label));
+            if(label.startsWith("撤銷")||label.startsWith("移除")||label.startsWith("停止")){
+                android.text.SpannableString danger=new android.text.SpannableString(label);danger.setSpan(new android.text.style.ForegroundColorSpan(Color.rgb(160,65,51)),0,label.length(),0);item.setTitle(danger);
+            }
+        }
+        popup.setOnMenuItemClickListener(item->{items.actions.get(item.getItemId()).run();return true;});popup.show();
+    }
+    private void recordAction(LinearLayout box,String label,Runnable run){
+        RecordMenu items;
+        if(box.getTag() instanceof RecordMenu)items=(RecordMenu)box.getTag();
+        else {
+            items=new RecordMenu();box.setTag(items);LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.TOP);
+            View title=box.getChildAt(0);box.removeView(title);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+            Button more=iconButton(R.drawable.action_more,"此筆紀錄的更多操作");heading.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));box.addView(heading,0,new LinearLayout.LayoutParams(-1,-2));
+            more.setOnClickListener(v->openOperations(more,items));
+        }
+        items.labels.add(label);items.actions.add(run);
+    }
+    private void disclosure(LinearLayout box,String label,View details){
+        Button toggle=styledButton(label+"  ⌄",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
+        toggle.setContentDescription(label+"，已收合");toggle.setOnClickListener(v->{boolean open=details.getVisibility()!=View.VISIBLE;details.setVisibility(open?View.VISIBLE:View.GONE);toggle.setText(label+(open?"  ⌃":"  ⌄"));toggle.setContentDescription(label+(open?"，已展開":"，已收合"));});
+    }
+    private void cardAction(LinearLayout box,String label,Runnable run){recordAction(box,label,run);}
+    private String inputFingerprint(View view){
+        StringBuilder result=new StringBuilder();
+        if(view instanceof EditText)result.append("T:").append(((EditText)view).getText()).append('\u0001');
+        else if(view instanceof Spinner)result.append("S:").append(((Spinner)view).getSelectedItemPosition()).append('\u0001');
+        else if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)result.append(inputFingerprint(group.getChildAt(i)));}
+        return result.toString();
+    }
+    private void confirmDiscard(boolean changed,Runnable close){
+        if(!changed){close.run();return;}
+        new AlertDialog.Builder(this).setTitle("放棄尚未儲存的變更？").setMessage("離開後不會保存這次輸入與附件變更。").setNegativeButton("繼續編輯",null).setPositiveButton("放棄變更",(d,w)->close.run()).show();
+    }
+    private void guardForm(android.app.Dialog dialog,View inputs,java.util.function.Supplier<String> extras,Button cancel){
+        View content=dialog.findViewById(android.R.id.content);
+        if(content instanceof android.view.ViewGroup){View first=((android.view.ViewGroup)content).getChildAt(0);if(first instanceof LinearLayout){LinearLayout page=(LinearLayout)first;View title=page.getChildAt(0);if(title instanceof TextView){page.removeView(title);LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(8),0,dp(8),0);Button back=iconButton(R.drawable.action_back,"取消並返回");back.setOnClickListener(v->cancel.performClick());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));title.setPadding(dp(4),dp(10),dp(4),dp(10));toolbar.addView(title,new LinearLayout.LayoutParams(0,-2,1));page.addView(toolbar,0);}}}
+        String baseline=inputFingerprint(inputs)+extras.get();
+        Runnable close=()->confirmDiscard(!baseline.equals(inputFingerprint(inputs)+extras.get()),dialog::dismiss);
+        cancel.setOnClickListener(v->close.run());dialog.setOnKeyListener((d,key,event)->{if(key==android.view.KeyEvent.KEYCODE_BACK){if(event.getAction()==android.view.KeyEvent.ACTION_UP)close.run();return true;}return false;});
+    }
+    private final class FullFormDialog extends AlertDialog {
+        private final LinearLayout page;private final Button cancel,positive,neutral;private final View inputs;
+        private String baseline;
+        FullFormDialog(String title,View content,String primary,String secondary){
+            super(MainActivity.this,android.R.style.Theme_Material_Light_NoActionBar);requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);setCanceledOnTouchOutside(false);
+            inputs=content;compactInputs(content);if(content instanceof ScrollView){View child=((ScrollView)content).getChildAt(0);if(child!=null)child.setPadding(0,dp(4),0,dp(8));}else content.setPadding(0,dp(4),0,dp(8));page=form();page.setBackgroundColor(Color.rgb(248,244,237));page.setPadding(0,0,0,0);
+            LinearLayout header=new LinearLayout(MainActivity.this);header.setPadding(dp(8),dp(4),dp(12),dp(4));header.setGravity(Gravity.CENTER_VERTICAL);
+            Button back=iconButton(R.drawable.action_back,"取消並返回");back.setOnClickListener(v->cancel());header.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            TextView heading=text(title,20,Color.rgb(77,57,39));heading.setTypeface(null,Typeface.BOLD);header.addView(heading,new LinearLayout.LayoutParams(0,-2,1));page.addView(header);
+            ScrollView scroll;if(content instanceof ScrollView)scroll=(ScrollView)content;else{scroll=new ScrollView(MainActivity.this);scroll.addView(content);}scroll.setFillViewport(true);scroll.setPadding(dp(12),0,dp(12),dp(8));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+            LinearLayout footer=new LinearLayout(MainActivity.this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));
+            cancel=styledButton("取消",false,false);positive=styledButton(primary,true,false);neutral=secondary==null?null:styledButton(secondary,false,false);
+            for(Button button:new Button[]{cancel,neutral,positive})if(button!=null){LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);if(button!=positive)params.rightMargin=dp(8);footer.addView(button,params);}
+            cancel.setOnClickListener(v->cancel());positive.setOnClickListener(v->dismiss());page.addView(footer);baseline=inputFingerprint(inputs);
+        }
+        @Override protected void onCreate(Bundle state){super.onCreate(state);setContentView(page);getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));getWindow().setLayout(-1,-1);getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);}
+        @Override public Button getButton(int which){if(which==BUTTON_POSITIVE)return positive;if(which==BUTTON_NEGATIVE)return cancel;if(which==BUTTON_NEUTRAL)return neutral;return super.getButton(which);}
+        @Override public void cancel(){confirmDiscard(!baseline.equals(inputFingerprint(inputs)),()->FullFormDialog.super.cancel());}
+    }
+    private void compactInputs(View view){
+        if(view instanceof EditText||view instanceof Spinner){if(view.getParent() instanceof LinearLayout&&((LinearLayout)view.getParent()).getChildAt(0) instanceof TextView)polishExpenseInput(view);}
+        else if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)compactInputs(group.getChildAt(i));}
+    }
+    private AlertDialog fullForm(String title,View content,String primary){return new FullFormDialog(title,content,primary,null);}
     private void markVoided(LinearLayout box) {
         GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(239,237,233));bg.setStroke(dp(1),Color.rgb(221,218,211));bg.setCornerRadius(dp(16));box.setBackground(bg);
         for(int i=0;i<box.getChildCount();i++)if(box.getChildAt(i) instanceof TextView){TextView value=(TextView)box.getChildAt(i);value.setTextColor(Color.rgb(126,123,117));value.setPaintFlags(value.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);value.setTypeface(null,Typeface.NORMAL);}
@@ -330,11 +409,13 @@ public class MainActivity extends Activity {
         action("修改不動產名稱",()->editName("properties",property,"name","不動產名稱"));
         if(property.optString("type").equals("建築物"))action("切換整棟／分房出租",()->rentalMode(property));
         primaryAction("＋ 新增出租單位",()->addUnit(propertyId,property.optString("name")));
-        EditText search=field(body,"搜尋代號或租客姓名");
+        String listProperty=propertyId;
+        EditText search=field(body,"搜尋代號或租客姓名");search.setText(propertySearches.getOrDefault(listProperty,""));
         Spinner filter=choice(body,"出租狀態",new String[]{"啟用出租","全部（含停用）","停用出租","出租中","未出租","待起租","租約已到期","未建租約"});
-        Spinner sort=choice(body,new String[]{"代號由小到大","代號由大到小"});
+        Spinner sort=choice(body,new String[]{"代號由小到大","代號由大到小"});filter.setSelection(propertyFilters.getOrDefault(listProperty,0));sort.setSelection(propertySorts.getOrDefault(listProperty,0));
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
+            propertySearches.put(listProperty,search.getText().toString());propertyFilters.put(listProperty,filter.getSelectedItemPosition());propertySorts.put(listProperty,sort.getSelectedItemPosition());
             list.removeAllViews();List<JSONObject> rows=new ArrayList<>();JSONArray units=data("units");
             for(int i=0;i<units.length();i++) {JSONObject u=units.optJSONObject(i);String st=status(u);
                 if(!propertyId.equals(u.optString("propertyId"))||!(u.optString("code")+" "+currentTenant(u)).toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
@@ -358,15 +439,10 @@ public class MainActivity extends Activity {
         for(int i=0;i<leases.length();i++)if(unit.optString("id").equals(leases.optJSONObject(i).optString("unitId")))rows.add(leases.optJSONObject(i));
         rows.sort((x,y)->y.optString("start").compareTo(x.optString("start")));
         for(JSONObject l:rows) {
-            card(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+(l.has("initialMeter")&&!l.isNull("initialMeter")?"\n起始電度："+fmt(l.optLong("initialMeter")):"\n起始電度：尚未設定")+(l.has("terminatedOn")?"\n已退租："+l.optString("terminatedOn"):"")+"\n"+RentTerms.label(l)+" $"+l.optLong("rent")+" · "+l.optString("cycle")+"\n約定押金 $"+l.optLong("deposit")+"（約定金額；實收看押金明細）\n"+l.optString("email")+"\n"+l.optString("utilities")+(l.optString("utilities").equals("管理者代收水電")?(l.isNull("water")?" · 水費待設定":" · 月水費 $"+l.optLong("water")):""));
-            if(!l.has("terminatedOn"))action("修改 "+l.optString("tenant")+" 的租約",()->leaseForm(unit,l));
-            action(l.optString("contractFile").isEmpty()?"上傳 PDF 合約":"更換 PDF 合約",()->pickContract(l.optString("id")));
-            if(!l.optString("contractFile").isEmpty())action("開啟 PDF 合約",()->viewContract(l));
-            if(!l.optString("initialMeterPhoto").isEmpty())action("查看起始電表照片",()->viewMeterPhoto(l.optString("initialMeterPhoto")));
-            action("租客專屬報表與連結",()->tenantReport(l.optString("id")));
-            action("查看帳單與收款",()->leaseLedger(l));
+            tapCard(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+"\n"+RentTerms.label(l)+" $"+fmt(l.optLong("rent"))+" · "+l.optString("cycle")+(l.has("terminatedOn")?"\n已退租："+l.optString("terminatedOn"):""),()->leaseLedger(l));
         }
     }
+
     private void toggleRentalUnit(JSONObject unit){
         boolean enabled=!RentalUnits.enabled(unit);new AlertDialog.Builder(this).setMessage((enabled?"啟用":"停用")+unit.optString("code")+"？停用不列入出租／空房統計，歷史帳務保留。").setNegativeButton("取消",null).setPositiveButton("確認",(d,w)->{try{JSONArray next=RentalUnits.setEnabled(data("units"),data("leases"),unit.optString("id"),enabled,today());if(saveChecked("units",next))render();}catch(Exception e){error(e);}}).show();
     }
@@ -377,8 +453,7 @@ public class MainActivity extends Activity {
         LinearLayout layout = form();
         EditText name = field(layout, "不動產名稱，例如 A 棟、停車場土地");
         Spinner type = choice(layout, new String[]{"建築物", "土地"});
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("新增不動產").setView(layout)
-            .setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
+        AlertDialog dialog = fullForm("新增不動產",layout,"儲存");
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w -> {
             String value = name.getText().toString().trim();
             if (value.isEmpty()) { name.setError("請填名稱"); return; }
@@ -398,8 +473,7 @@ public class MainActivity extends Activity {
         LinearLayout layout = form();
         EditText code = field(layout, "代號，例如 C1、R1401");
         Spinner type = choice(layout, new String[]{"房間", "整棟", "車格", "土地出租範圍", "其他空間"});
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(propertyName + "：出租單位").setView(layout)
-            .setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
+        AlertDialog dialog = fullForm(propertyName + "：出租單位",layout,"儲存");
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w -> {
             String value = code.getText().toString().trim();
             if (value.isEmpty()) { code.setError("請填代號"); return; }
@@ -423,8 +497,7 @@ public class MainActivity extends Activity {
     private void editName(String key, JSONObject original, String column, String title) {
         LinearLayout layout = form(); EditText value = field(layout, title);
         value.setText(original.optString(column));
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("修改" + title).setView(layout)
-            .setNegativeButton("取消", null).setPositiveButton("儲存", null).create();
+        AlertDialog dialog = fullForm("修改" + title,layout,"儲存");
         dialog.setOnShowListener(v -> dialog.getButton(-1).setOnClickListener(w -> {
             String next = value.getText().toString().trim();
             if (next.isEmpty()) { value.setError("不可空白"); return; }
@@ -529,6 +602,7 @@ public class MainActivity extends Activity {
         android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(Color.rgb(248,244,237));TextView title=text(unit.optString("code")+" · "+(original==null?"新增租約":"修改租約"),20,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);title.setPadding(dp(16),dp(12),dp(16),dp(10));page.addView(title,new LinearLayout.LayoutParams(-1,-2));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),saveButton=styledButton("儲存",true,false);LinearLayout.LayoutParams cancelParams=new LinearLayout.LayoutParams(0,dp(48),1);cancelParams.rightMargin=dp(8);footer.addView(cancel,cancelParams);footer.addView(saveButton,new LinearLayout.LayoutParams(0,dp(48),1));page.addView(footer,new LinearLayout.LayoutParams(-1,-2));dialog.setContentView(page);dialog.setCanceledOnTouchOutside(false);cancel.setOnClickListener(v->dialog.dismiss());editor.dialog=dialog;
         editor.snapshot=()->{JSONObject snapshot=new JSONObject();try{JSONObject values=new JSONObject();for(int i=0;i<draftInputs.length;i++)values.put(draftKeys[i],draftInputs[i].getText().toString());values.put("pricing",pricing.getSelectedItemPosition()).put("cycle",cycle.getSelectedItemPosition()).put("utilities",utilities.getSelectedItemPosition());snapshot.put("token",editor.token).put("unitId",unit.optString("id")).put("original",original==null?JSONObject.NULL:original).put("attachments",editor.attachments).put("values",values).put("scroll",scroll.getScrollY());}catch(Exception e){throw new IllegalStateException(e);}return snapshot;};
+        guardForm(dialog,layout,()->editor.attachments.toString(),cancel);
         dialog.setOnDismissListener(d->{if(!destroyingLeaseEditor){try{for(String name:LeaseAttachments.discard(editor.attachments,editor.saved))new File(photoDir(),name).delete();}catch(Exception e){error(e);}getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingLeaseAttachment").commit();}if(leaseEditor==editor)leaseEditor=null;});
         saveButton.setOnClickListener(w -> {
             if(getSharedPreferences("workflow",MODE_PRIVATE).contains("pendingLeaseAttachment")){Toast.makeText(this,"附件仍在處理，請完成後再儲存",Toast.LENGTH_SHORT).show();return;}
@@ -683,23 +757,24 @@ public class MainActivity extends Activity {
         LinearLayout tabs=new LinearLayout(this);tabs.setPadding(dp(4),dp(4),dp(4),dp(4));GradientDrawable track=new GradientDrawable();track.setColor(Color.rgb(237,229,217));track.setCornerRadius(dp(16));tabs.setBackground(track);page.addView(tabs,new LinearLayout.LayoutParams(-1,-2));
         ScrollView scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setPadding(0,dp(8),0,0);LinearLayout content=form();content.setPadding(0,0,0,dp(12));scroll.addView(content);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();
-        String[] names={"總覽","帳單","押金","退租結算"};Button[] buttons=new Button[names.length];
+        String[] names={"概況","帳務","押金／結算","附件"};Button[] buttons=new Button[names.length];
         Runnable refresh=()->{
             JSONObject current=find("leases",leaseId);header.removeAllViews();
-            header.addView(text(current==null?"租約已不存在":current.optString("unitCodeSnapshot")+" · "+current.optString("tenant"),22,Color.rgb(90,61,37)));
-            if(current!=null)header.addView(text(current.has("terminatedOn")?"已退租 · "+current.optString("terminatedOn"):"租期 "+current.optString("start")+" ～ "+current.optString("end"),14,Color.DKGRAY));
+            LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);header.addView(toolbar);
+            Button back=iconButton(R.drawable.action_back,"返回上一頁");back.setOnClickListener(v->dialog.dismiss());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            TextView heading=text(current==null?"租約已不存在":current.optString("unitCodeSnapshot")+" · "+current.optString("tenant"),20,Color.rgb(90,61,37));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
+            if(current!=null){Button more=iconButton(R.drawable.action_more,"租約更多操作");toolbar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{JSONObject latest=find("leases",leaseId);if(latest==null)return;RecordMenu menu=new RecordMenu();JSONObject unit=find("units",latest.optString("unitId"));if(unit!=null&&!latest.has("terminatedOn")){menu.labels.add("修改租約");menu.actions.add(()->leaseForm(unit,latest));}menu.labels.add("租客報表與分享");menu.actions.add(()->tenantReport(leaseId));openOperations(more,menu);});header.addView(text(current.has("terminatedOn")?"已退租 · "+current.optString("terminatedOn"):"租期 "+current.optString("start")+" ～ "+current.optString("end"),13,Color.DKGRAY));}
             for(int i=0;i<buttons.length;i++)if(buttons[i]!=null){buttons[i].setTextColor(Color.rgb(90,61,37));GradientDrawable pill=new GradientDrawable();pill.setCornerRadius(dp(12));pill.setColor(i==tab[0]?Color.rgb(255,252,247):Color.TRANSPARENT);buttons[i].setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.argb(25,112,77,50)),pill,null));buttons[i].setTypeface(null,i==tab[0]?Typeface.BOLD:Typeface.NORMAL);buttons[i].setContentDescription(names[i]+(i==tab[0]?"，目前分頁":"，切換分頁"));buttons[i].setSelected(i==tab[0]);}
             drawLeaseLedger(content,current,tab[0]);
         };
         for(int i=0;i<names.length;i++){final int index=i;Button b=new Button(this);buttons[i]=b;b.setText(names[i]);b.setTextSize(13);b.setAllCaps(false);b.setIncludeFontPadding(false);b.setStateListAnimator(null);b.setPadding(0,dp(10),0,dp(10));b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(dp(48));tabs.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(v->{tab[0]=index;refresh.run();scroll.scrollTo(0,0);});}
-        Button close=styledButton("返回不動產",false,false);close.setOnClickListener(v->dialog.dismiss());LinearLayout.LayoutParams closeParams=new LinearLayout.LayoutParams(-1,-2);closeParams.setMargins(0,dp(8),0,0);page.addView(close,closeParams);
         livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();scroll.post(()->scroll.scrollTo(0,y));});dialog.setOnDismissListener(d->livePanels.remove(dialog));refresh.run();dialog.show();
         if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
     }
     private void drawLeaseLedger(LinearLayout content,JSONObject lease,int tab) {
         content.removeAllViews();LinearLayout previous=body;body=content;
         try {
-            if(lease==null){card("租約已不存在","請返回不動產重新選擇。");return;}
+            if(lease==null){card("租約已不存在","請返回上一頁重新選擇。");return;}
             JSONArray invoices=data("invoices"),receipts=data("receipts");long debt=0,received=0,credit=0;
             for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}
             for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId"))){if(r.optBoolean("cash",true))received+=Ledger.money(r,"amount");credit+=Ledger.money(r,"amount")-Ledger.allocated(r);}}
@@ -712,11 +787,11 @@ public class MainActivity extends Activity {
                 else {if(settlement!=null&&Settlements.due(settlement)>0)primaryAction("＋ 收到結算補繳",()->settlementPaymentForm(lease));if(deposit.getLong("held")>0)action("退還剩餘押金",()->depositForm(lease,true));}
                 card("收款摘要","租金與水電實收累計 $"+received+"\n尚未分配 $"+credit+"\n押金與結算補繳另外記錄。");
                 if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
-                card("租約資料",lease.optString("start")+" ～ "+lease.optString("end")+"\n"+RentTerms.label(lease)+" $"+lease.optLong("rent")+" · 約定押金 $"+lease.optLong("deposit"));
+                card("租約資料",lease.optString("tenant")+"\n"+lease.optString("email")+"\n"+lease.optString("start")+" ～ "+lease.optString("end")+"\n"+RentTerms.label(lease)+" $"+fmt(lease.optLong("rent"))+" · "+lease.optString("cycle")+"\n約定押金 $"+fmt(lease.optLong("deposit"))+"\n"+lease.optString("utilities")+(lease.has("initialMeter")&&!lease.isNull("initialMeter")?"\n起始電度 "+fmt(lease.optLong("initialMeter")):"\n起始電度尚未設定"));
                 return;
             }
-            if(tab==2){depositCard(lease);return;}
-            if(tab==3){if(settlement==null)card("尚未退租結算","退租時分開記錄費用與押金收退，再核對實際退款或補繳。");settlementCard(lease);return;}
+            if(tab==2){depositCard(lease);if(settlement==null)card("退租結算","退租時分開記錄費用與押金收退，再核對實際退款或補繳。");settlementCard(lease);return;}
+            if(tab==3){leaseAttachmentDetails(lease);return;}
             if(!lease.has("terminatedOn"))primaryAction("＋ 建立當月帳單（租金＋水電）",()->billingForm(lease));
             action("抄電表／查看照片",()->meterPanel(lease));
             Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
@@ -737,7 +812,7 @@ public class MainActivity extends Activity {
                 final String billMonth=entry.getKey();action("複製 "+billMonth+" 繳費明細",()->copyBill(lease,billMonth));
                 for(JSONObject r:entry.getValue())if(!lease.has("terminatedOn")&&Ledger.paid(r.getString("id"),receipts)==0)cardAction(billDetails,"撤銷"+r.optString("kind"),()->deleteInvoice(r));
                 body=monthParent;
-                cardAction(monthBox,"展開／收合明細",()->details.setVisibility(details.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
+                disclosure(monthBox,"帳單明細",details);
             }
             if(months.isEmpty())card("尚無帳單","建立當月租金與水電後，會顯示在這裡。");
             card("收款紀錄","實際租金與水電收款，以及結算抵付紀錄。");
@@ -746,6 +821,20 @@ public class MainActivity extends Activity {
                 if(!lease.has("terminatedOn"))cardAction(receiptBox,"撤銷",()->deleteReceipt(r));
             }
         }catch(Exception e){error(e);}finally{body=previous;}
+    }
+    private void leaseAttachmentDetails(JSONObject lease){
+        boolean editable=!lease.has("terminatedOn");
+        attachmentDetail("PDF 合約",lease.optString("contractFile").isEmpty()?"尚未附上":lease.optString("contractName","租賃合約.pdf"),lease.optString("contractFile"),false,lease,editable);
+        attachmentDetail("起始電表照片",lease.optString("initialMeterPhoto").isEmpty()?"尚未附上":"點縮圖查看起租時的電表照片",lease.optString("initialMeterPhoto"),true,lease,editable);
+        body.addView(text(editable?"新增、更換或移除附件會開啟租約編輯；確認儲存後一起生效。":"已退租附件保留供查閱。",12,Color.DKGRAY));
+    }
+    private void attachmentDetail(String title,String detail,String file,boolean photo,JSONObject lease,boolean editable){
+        LinearLayout box=card("","");box.removeAllViews();LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);box.addView(row,new LinearLayout.LayoutParams(-1,-2));
+        ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);row.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));
+        if(photo&&!file.isEmpty())loadExpenseThumbnail(image,file);else{image.setImageResource(photo?R.drawable.action_photo:R.drawable.action_document);image.setPadding(dp(16),dp(16),dp(16),dp(16));image.setColorFilter(Color.rgb(100,67,43));}
+        LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);info.setPadding(dp(10),0,dp(6),0);info.addView(text(title,15,Color.rgb(77,57,39)));TextView name=text(detail,13,Color.DKGRAY);name.setMaxLines(3);name.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(name);row.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+        if(!file.isEmpty()){Runnable open=()->{if(photo)viewMeterPhoto(file);else viewContract(lease);};info.setContentDescription("開啟"+title);info.setOnClickListener(v->open.run());image.setContentDescription("開啟"+title);image.setOnClickListener(v->open.run());}
+        if(editable){Button more=iconButton(file.isEmpty()?R.drawable.action_add:R.drawable.action_more,title+"操作");row.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{Runnable edit=()->{JSONObject current=find("leases",lease.optString("id"));JSONObject unit=current==null?null:find("units",current.optString("unitId"));if(unit!=null)leaseForm(unit,current);};if(file.isEmpty()){edit.run();return;}RecordMenu menu=new RecordMenu();menu.labels.add("更換／移除附件");menu.actions.add(edit);openOperations(more,menu);});}
     }
     private void billingForm(JSONObject lease) {
         if(lease.has("terminatedOn")){error(new IllegalArgumentException("已退租，帳單已結算"));return;}
@@ -793,7 +882,7 @@ public class MainActivity extends Activity {
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){loadMonth.run();}public void afterTextChanged(Editable e){}});
         loadMonth.run();
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("建立當月帳單").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽整筆帳單",null).create();
+        AlertDialog dialog=fullForm("建立當月帳單",scroll,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try {
             YearMonth ym=YearMonth.parse(dateValue(month));JSONArray before=data("invoices");
             JSONObject existingRent=Ledger.forMonth(before,lease.optString("id"),RentTerms.rentMonth(lease,ym),"租金"),existingUtility=Ledger.forMonth(before,lease.optString("id"),ym,"水電");
@@ -829,7 +918,7 @@ public class MainActivity extends Activity {
         if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(money,draft);note.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));}
         layout.addView(text("依最早月份分配，當月租金先於水電。請先算好水電並建立當月完整帳單；有舊欠款時會先抵付。請核對下個畫面的分配清單。押金另行管理。",14,Color.DKGRAY));
         ScrollView scroll=new ScrollView(this);scroll.addView(layout);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("收到租金").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽分配",null).create();
+        AlertDialog dialog=fullForm("收到租金",scroll,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try {
             if(property!=null)Owners.paymentAccount(fullBackup(),property.optString("id"),selectedDraftAccount(accounts,account).getString("id"));
             JSONArray invoices=data("invoices"),receipts=data("receipts");JSONObject r=Ledger.receipt(lease.getString("id"),dateValue(date),selectedDraftAccount(accounts,account).getString("name"),amount(money,false),note.getText().toString(),invoices,receipts).put("accountId",selectedDraftAccount(accounts,account).getString("id"));
@@ -894,7 +983,7 @@ public class MainActivity extends Activity {
         JSONObject unit=find("units",lease.optString("unitId"));if(unit!=null)for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("propertyId").equals(unit.optString("propertyId"))){account.setSelection(i);break;}
         EditText amount=labeledNumber(layout,refund?"實際退款金額":"實際收到押金金額"),note=labeledField(layout,"備註／交易辨識");
         layout.addView(text("約定押金 $"+lease.optLong("deposit")+"。請依實際金流登錄；補登起算日前收付只補押金餘額，不重複加減期初資金。退款不能超過該租約當時持有押金。",14,Color.DKGRAY));
-        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle(kind).setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=fullForm(kind,scroll,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONObject row=Deposits.movement(lease.getString("id"),accounts.get(account.getSelectedItemPosition()).getString("id"),dateValue(date),kind,amount(amount,false),note.getText().toString())
                 .put("tenantSnapshot",lease.getString("tenant")).put("unitCodeSnapshot",lease.getString("unitCodeSnapshot"));
@@ -939,7 +1028,7 @@ public class MainActivity extends Activity {
         card("已退租 · "+s.getString("date"),"租金與水電原帳單尚欠 $"+s.getLong("invoiceDebt")+"\n另收修繕費 $"+s.getLong("repairs")+" · 其他費用 $"+s.getLong("other")+"\n結算費用合計 $"+s.getLong("total")+"\n押金抵付費用 $"+s.getLong("depositUsed")+"\n尚需補繳 $"+Settlements.due(s)+" · 押金尚待退 $"+held+"\n"+s.getString("note"));
         LinearLayout sourceBox=card("結算來源","原帳單欠款明細，點開查看。");LinearLayout sourceDetails=form();sourceDetails.setVisibility(View.GONE);sourceBox.addView(sourceDetails);LinearLayout sourceParent=body;body=sourceDetails;
         JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);card("結算原帳單 · "+r.getString("month")+" "+r.getString("kind"),"租金 $"+r.getLong("rent")+" · 水費 $"+r.getLong("water")+" · 電費 $"+r.getLong("electricity")+"\n原合計 $"+r.getLong("total")+" · 結算前已付 $"+r.getLong("paidBefore")+" · 結算時未付 $"+r.getLong("remaining"));}
-        body=sourceParent;cardAction(sourceBox,"展開／收合原帳單",()->sourceDetails.setVisibility(sourceDetails.getVisibility()==View.GONE?View.VISIBLE:View.GONE));
+        body=sourceParent;disclosure(sourceBox,"結算原帳單",sourceDetails);
         if(Settlements.due(s)>0)primaryAction("＋ 收到結算補繳",()->settlementPaymentForm(lease));
         if(held>0)action("退還剩餘押金",()->depositForm(lease,true));
         action("複製退租結算明細",()->{try{String msg=s.getString("unitCodeSnapshot")+" · "+s.getString("tenantSnapshot")+"\n退租日 "+s.getString("date")+"\n原帳單未付 $"+s.getLong("invoiceDebt")+"\n修繕費 $"+s.getLong("repairs")+" · 其他 $"+s.getLong("other")+"\n結算費用 $"+s.getLong("total")+"\n押金抵付 $"+s.getLong("depositUsed")+"\n尚需補繳 $"+Settlements.due(s)+" · 押金待退 $"+Deposits.summary(lease.getString("id"),data("deposits")).getLong("held")+"\n"+s.getString("note");android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("退租結算",display(msg)));Toast.makeText(this,"結算明細已複製",Toast.LENGTH_SHORT).show();}catch(Exception e){error(e);}});
@@ -955,7 +1044,7 @@ public class MainActivity extends Activity {
         Runnable load=()->{try{YearMonth ym=YearMonth.from(LocalDate.parse(dateValue(date)));JSONObject r=Ledger.forMonth(data("invoices"),lease.optString("id"),RentTerms.rentMonth(lease,ym),"租金"),u=Ledger.forMonth(data("invoices"),lease.optString("id"),ym,"水電");rent.setEnabled(r==null);JSONObject finalTerms=new JSONObject(lease.toString());if(RentTerms.scheduled(lease))finalTerms.put("end",dateValue(date));rent.setText(r==null?String.valueOf(RentTerms.suggested(finalTerms,ym)):r.optString("rent"));boolean edit=collect&&u==null;for(EditText f:new EditText[]{water,prior,current})f.setEnabled(edit);water.setText(u!=null?u.optString("water"):collect?(lease.isNull("water")?"":lease.optString("water")):"0");prior.setText(u!=null?u.optString("previous"):collect?LeaseFiles.initialReading(lease,ym.toString()):"0");current.setText(u!=null?u.optString("current"):collect?"":"0");}catch(Exception ignored){}};
         date.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){load.run();}public void afterTextChanged(Editable e){}});load.run();
         layout.addView(text("既有月份金額鎖定並沿用；自行繳水電的租約不代收。確認結算後保留並鎖定原帳務，不自動退款。請先備份並核對，這版尚不提供取消已確認結算。",14,Color.DKGRAY));
-        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("退租結算費用").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽結算",null).create();
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=fullForm("退租結算費用",scroll,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONObject before=fullBackup(),proposed=Settlements.plan(before,lease.getString("id"),dateValue(date),amount(rent,false),amount(water,false),amount(prior,false),amount(current,false),amount(repairs,false),amount(other,false),note.getText().toString());validateBackup(proposed);
             JSONObject s=Settlements.forLease(proposed.getJSONArray("settlements"),lease.getString("id"));StringBuilder preview=new StringBuilder("退租日 "+s.getString("date")+"\n");JSONArray lines=s.getJSONArray("lines");for(int i=0;i<lines.length();i++){JSONObject r=lines.getJSONObject(i);preview.append(r.getString("month")).append(" ").append(r.getString("kind")).append("（租金 $").append(r.getLong("rent")).append("、水費 $").append(r.getLong("water")).append("、電費 $").append(r.getLong("electricity")).append("）尚欠 $").append(r.getLong("remaining")).append("\n");}
@@ -966,7 +1055,7 @@ public class MainActivity extends Activity {
     private void settlementPaymentForm(JSONObject lease) {
         try{JSONObject s=Settlements.forLease(data("settlements"),lease.getString("id"));if(s==null||Settlements.due(s)<=0)throw new IllegalArgumentException("目前沒有待補繳結算費用");
             List<JSONObject> accounts=accountRows();if(accounts.isEmpty())throw new IllegalArgumentException("請先建立實際收款帳戶");LinearLayout layout=form();EditText date=dateField(layout,"補繳收款日期",false);Spinner account=accountChoice(layout,accounts,"實際收款帳戶");EditText money=number(layout,"實際收到補繳金額"),note=field(layout,"備註／交易辨識");layout.addView(text("尚需補繳 $"+Settlements.due(s)+"；可分次收款。這筆實際金流只計入帳戶一次。",14,Color.DKGRAY));
-            AlertDialog dialog=new AlertDialog.Builder(this).setTitle("收到結算補繳").setView(layout).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
+            AlertDialog dialog=fullForm("收到結算補繳",layout,"核對");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
                 JSONObject before=fullBackup(),proposed=Settlements.payment(before,lease.getString("id"),dateValue(date),accounts.get(account.getSelectedItemPosition()).getString("id"),amount(money,false),note.getText().toString());validateBackup(proposed);JSONObject next=Settlements.forLease(proposed.getJSONArray("settlements"),lease.getString("id"));
                 new AlertDialog.Builder(this).setMessage(display("實際收款 $"+amount(money,false)+"\n帳戶："+accounts.get(account.getSelectedItemPosition()).getString("name")+"\n收款日期："+date.getText()+"\n確認後尚欠 $"+Settlements.due(next))).setNegativeButton("修改",null).setPositiveButton("確認收款",(d,b)->{try{if(saveSettlement(proposed,before))dialog.dismiss();}catch(Exception e){error(e);}}).show();
             }catch(Exception e){error(e);}}));dialog.show();
@@ -1034,15 +1123,16 @@ public class MainActivity extends Activity {
         TextView title=text(row.getString("date")+" · $"+fmt(row.getLong("amount")),17,Color.rgb(77,57,39));title.setTypeface(null,Typeface.BOLD);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.TOP);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
         if(!row.optBoolean("void")){
-            Button more=styledButton("⋯",false,false);more.setTextSize(24);more.setMinWidth(0);more.setMinimumWidth(0);more.setPadding(0,0,0,0);more.setContentDescription("此筆支出的更多操作：修改或撤銷");
-            more.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));
-            heading.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{PopupMenu menu=new PopupMenu(this,more);menu.getMenu().add(0,1,0,"修改");menu.getMenu().add(0,2,1,"撤銷");menu.setOnMenuItemClickListener(item->{JSONObject current=find("expenses",row.optString("id"));if(current==null||current.optBoolean("void")){Toast.makeText(this,"此筆紀錄已變更，請重新查看",Toast.LENGTH_SHORT).show();render();return true;}if(item.getItemId()==1)editExpense(current);else if(item.getItemId()==2)voidMovement("expenses",current);return true;});menu.show();});
+            Button more=iconButton(R.drawable.action_more,"此筆支出的更多操作");heading.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            more.setOnClickListener(v->{RecordMenu menu=new RecordMenu();menu.labels.add("修改");menu.actions.add(()->{JSONObject current=find("expenses",row.optString("id"));if(current!=null&&!current.optBoolean("void"))editExpense(current);else Toast.makeText(this,"紀錄已變更，請重新查看",Toast.LENGTH_SHORT).show();});
+                if(row.optJSONArray("history")!=null){menu.labels.add("修改紀錄");menu.actions.add(()->expenseHistory(row.optString("id")));}
+                menu.labels.add("撤銷");menu.actions.add(()->{JSONObject current=find("expenses",row.optString("id"));if(current!=null&&!current.optBoolean("void"))voidMovement("expenses",current);});openOperations(more,menu);});
         }
         box.addView(heading,new LinearLayout.LayoutParams(-1,-2));
         TextView descriptionText=text(row.getString("description"),17,Color.rgb(77,57,39));descriptionText.setTypeface(null,Typeface.BOLD);box.addView(descriptionText,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout content=new LinearLayout(this);content.setGravity(Gravity.CENTER_VERTICAL);LinearLayout left=new LinearLayout(this);left.setOrientation(LinearLayout.VERTICAL);left.setPadding(0,dp(6),dp(10),0);content.addView(left,new LinearLayout.LayoutParams(0,-2,1));
         left.addView(text("分類："+categoryName(row.getString("category"))+"\n付款帳戶："+accountName(row.getString("accountId")),14,Color.rgb(112,105,92)));
-        if(row.has("history")){Button history=styledButton("修改紀錄 · "+row.getJSONArray("history").length()+" 次",false,false);history.setTextSize(12);history.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);history.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));history.setOnClickListener(v->expenseHistory(row.optString("id")));left.addView(history,new LinearLayout.LayoutParams(-1,-2));}
+        if(row.optBoolean("void")&&row.has("history")){Button history=styledButton("修改紀錄 · "+row.getJSONArray("history").length()+" 次",false,false);history.setTextSize(12);history.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);history.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));history.setOnClickListener(v->expenseHistory(row.optString("id")));left.addView(history,new LinearLayout.LayoutParams(-1,-2));}
         JSONArray photos=ExpensePhotos.photos(row);if(photos.length()>0){LinearLayout right=new LinearLayout(this);right.setOrientation(LinearLayout.VERTICAL);right.setGravity(Gravity.END);ImageView thumbnail=new ImageView(this);thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);thumbnail.setBackground(surface(Color.rgb(239,237,233),8));right.addView(thumbnail,new LinearLayout.LayoutParams(dp(80),dp(80)));loadExpenseThumbnail(thumbnail,photos.getString(0));TextView count=text("照片 "+photos.length()+" 張",12,Color.rgb(112,105,92));right.addView(count);right.setContentDescription("查看此筆支出的 "+photos.length()+" 張照片");right.setOnClickListener(v->expensePhotoGallery(row));thumbnail.setOnClickListener(v->expensePhotoGallery(row));count.setOnClickListener(v->expensePhotoGallery(row));content.addView(right,new LinearLayout.LayoutParams(-2,-2));}
         box.addView(content,new LinearLayout.LayoutParams(-1,-2));
         JSONArray splits=row.getJSONArray("splits");Button toggle=styledButton("分攤明細 · "+splits.length()+" 個不動產  ▾",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
@@ -1091,7 +1181,7 @@ public class MainActivity extends Activity {
     }
     private void categoryEdit(JSONObject original){
         LinearLayout layout=form();EditText name=labeledField(layout,"類別名稱");if(original!=null)name.setText(original.optString("name"));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(original==null?"新增支出類別":"修改支出類別").setView(layout).setNegativeButton("取消",null).setPositiveButton("儲存",null).create();dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{String n=requiredText(name);JSONArray next=data("expenseCategories");if(original==null)next.put(new JSONObject().put("id",UUID.randomUUID().toString()).put("name",n).put("active",true));else for(int i=0;i<next.length();i++)if(next.getJSONObject(i).getString("id").equals(original.getString("id")))next.getJSONObject(i).put("name",n);ExpenseCategories.validate(next,data("expenses"));if(saveChecked("expenseCategories",next)){dialog.dismiss();render();}}catch(Exception e){name.setError(e.getMessage());name.requestFocus();}}));dialog.show();
+        AlertDialog dialog=fullForm(original==null?"新增支出類別":"修改支出類別",layout,"儲存");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{String n=requiredText(name);JSONArray next=data("expenseCategories");if(original==null)next.put(new JSONObject().put("id",UUID.randomUUID().toString()).put("name",n).put("active",true));else for(int i=0;i<next.length();i++)if(next.getJSONObject(i).getString("id").equals(original.getString("id")))next.getJSONObject(i).put("name",n);ExpenseCategories.validate(next,data("expenses"));if(saveChecked("expenseCategories",next)){dialog.dismiss();render();}}catch(Exception e){name.setError(e.getMessage());name.requestFocus();}}));dialog.show();
     }
     private String accountName(String id) {JSONObject a=find("accounts",id);return a==null?"帳戶未設定":a.optString("name");}
     private String propertyName(String id) {JSONObject p=find("properties",id);return p==null?"不動產不存在":p.optString("name");}
@@ -1102,7 +1192,7 @@ public class MainActivity extends Activity {
         JSONArray properties=data("properties");String[] options=new String[properties.length()+1];options[0]="不綁定／共用現金";for(int i=0;i<properties.length();i++)options[i+1]=properties.optJSONObject(i).optString("name");
         Spinner property=choice(layout,"對應不動產",options);
         layout.addView(text("請以存摺餘額為準，起算日當天及之後交易會加減。之前的歷史交易只供報表，不再次加減。\n期初設定若填錯，可在帳戶流水修正；請先匯出備份，修正會重算餘額。",14,Color.DKGRAY));
-        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("設定資金帳戶").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=fullForm("設定資金帳戶",scroll,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             String pid=type.getSelectedItemPosition()==1||property.getSelectedItemPosition()==0?"":properties.getJSONObject(property.getSelectedItemPosition()-1).getString("id");
             JSONObject row=Bookkeeping.account(requiredText(name),type.getSelectedItem().toString(),dateValue(start),amount(opening,false),pid);
@@ -1191,12 +1281,13 @@ public class MainActivity extends Activity {
         }catch(Exception e){total.setError(e.getMessage());total.requestFocus();}});
 
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(layout);
-        android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(Color.rgb(248,244,237));TextView pageTitle=text(original==null?"新增支出":"修改支出",20,Color.rgb(77,57,39));pageTitle.setTypeface(null,Typeface.BOLD);pageTitle.setPadding(dp(16),dp(12),dp(16),dp(10));page.addView(pageTitle,new LinearLayout.LayoutParams(-1,-2));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),previewButton=styledButton("預覽",true,false);LinearLayout.LayoutParams cancelParams=new LinearLayout.LayoutParams(0,dp(48),1);cancelParams.rightMargin=dp(8);footer.addView(cancel,cancelParams);footer.addView(previewButton,new LinearLayout.LayoutParams(0,dp(48),1));page.addView(footer,new LinearLayout.LayoutParams(-1,-2));dialog.setContentView(page);cancel.setOnClickListener(v->dialog.dismiss());dialog.setCanceledOnTouchOutside(false);
+        android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(Color.rgb(248,244,237));TextView pageTitle=text(original==null?"新增支出":"修改支出",20,Color.rgb(77,57,39));pageTitle.setTypeface(null,Typeface.BOLD);pageTitle.setPadding(dp(16),dp(12),dp(16),dp(10));page.addView(pageTitle,new LinearLayout.LayoutParams(-1,-2));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),previewButton=styledButton("核對",true,false);LinearLayout.LayoutParams cancelParams=new LinearLayout.LayoutParams(0,dp(48),1);cancelParams.rightMargin=dp(8);footer.addView(cancel,cancelParams);footer.addView(previewButton,new LinearLayout.LayoutParams(0,dp(48),1));page.addView(footer,new LinearLayout.LayoutParams(-1,-2));dialog.setContentView(page);cancel.setOnClickListener(v->dialog.dismiss());dialog.setCanceledOnTouchOutside(false);
         Runnable refreshPhotos=()->{photoSection.removeAllViews();photoSection.addView(text("照片憑證 · "+photoNames.size()+" / 3 張",14,Color.DKGRAY));
             LinearLayout strip=new LinearLayout(this);photoSection.addView(strip,new LinearLayout.LayoutParams(-1,-2));
             for(String name:new ArrayList<>(photoNames)){android.widget.FrameLayout tile=new android.widget.FrameLayout(this);LinearLayout.LayoutParams tileParams=new LinearLayout.LayoutParams(dp(88),dp(80));tileParams.rightMargin=dp(8);strip.addView(tile,tileParams);ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),8));image.setClipToOutline(true);tile.addView(image,new android.widget.FrameLayout.LayoutParams(-1,-1));loadExpenseThumbnail(image,name);image.setContentDescription("查看照片憑證");image.setOnClickListener(v->viewMeterPhoto(name));Button remove=styledButton("×",false,false);remove.setTextSize(22);remove.setMinWidth(0);remove.setMinimumWidth(0);remove.setPadding(0,0,0,0);remove.setContentDescription("移除此張照片");remove.setBackground(surface(Color.argb(235,255,252,247),20));android.widget.FrameLayout.LayoutParams removeParams=new android.widget.FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END);tile.addView(remove,removeParams);remove.setOnClickListener(v->{photoNames.remove(name);((Runnable)photoSection.getTag()).run();});}
             if(photoNames.size()<3){Button add=styledButton("＋ 拍照／選相簿",false,false);add.setTextSize(13);photoSection.addView(add,new LinearLayout.LayoutParams(-1,dp(48)));add.setOnClickListener(v->{try{JSONObject snapshot=new JSONObject().put("date",date.getText().toString()).put("raw",description.getText().toString()).put("amount",total.getText().toString()).put("accountId",accounts.get(account.getSelectedItemPosition()).optString("id")).put("category",category.getSelectedItemPosition()==0?"":categoryRows.get(category.getSelectedItemPosition()-1).optString("id")).put("propertyIds",new JSONArray()).put("photos",new JSONArray(photoNames)).put("ownedPhotos",new JSONArray(ownedPhotos));JSONArray values=new JSONArray();for(int i=0;i<fields.size();i++)values.put(new JSONObject().put("propertyId",properties.optJSONObject(i).optString("id")).put("amount",fields.get(i).getText().toString()));snapshot.put("splits",values);pickExpensePhoto(snapshot,original,dialog,handedOff);}catch(Exception e){error(e);}});}
         };photoSection.setTag(refreshPhotos);refreshPhotos.run();
+        guardForm(dialog,layout,()->photoNames.toString(),cancel);
         dialog.setOnDismissListener(d->{if(!handedOff[0]&&!savedPhotos[0])for(String name:ownedPhotos)if(ExpensePhotos.photoName(name))new File(photoDir(),name).delete();if(!handedOff[0])getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingExpensePhoto").commit();});
         previewButton.setOnClickListener(w->{try{
             JSONArray splits=new JSONArray();for(int i=0;i<fields.size();i++){long n=amount(fields.get(i),true);if(n>0)splits.put(new JSONObject().put("propertyId",properties.getJSONObject(i).getString("id")).put("amount",n));}
@@ -1223,7 +1314,7 @@ public class MainActivity extends Activity {
         LinearLayout layout=form();EditText date=dateField(layout,"轉帳／提款日期",false);date.setText(today().toString());Spinner from=accountChoice(layout,accounts,"轉出帳戶"),to=accountChoice(layout,accounts,"轉入帳戶");to.setSelection(1);
         EditText value=labeledNumber(layout,"轉帳金額"),note=labeledField(layout,"備註，例如A帳戶提領零用金");layout.addView(text("銀行提款時選銀行→共用現金；不增加收入或支出。提款手續費請另外記支出。",14,Color.DKGRAY));
         if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(value,draft);note.setText(draft.optString("raw"));selectDraftAccount(from,accounts,draft.optString("fromId"));selectDraftAccount(to,accounts,draft.optString("toId"));}
-        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("資金轉移").setView(scroll).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=fullForm("資金轉移",scroll,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONObject a=selectedDraftAccount(accounts,from),b=selectedDraftAccount(accounts,to);JSONObject row=Bookkeeping.transfer(dateValue(date),a.getString("id"),b.getString("id"),amount(value,false),note.getText().toString());
             boolean historyFrom=LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(a.getString("start"))),historyTo=LocalDate.parse(row.getString("date")).isBefore(LocalDate.parse(b.getString("start")));
@@ -1236,7 +1327,7 @@ public class MainActivity extends Activity {
     }
     private void voidMovement(String key,JSONObject row) {
         LinearLayout layout=form();EditText reason=labeledField(layout,"錯誤原因，實際退款請勿使用撤銷");
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("撤銷錯誤紀錄").setView(layout).setNegativeButton("取消",null).setPositiveButton("確認撤銷",null).create();
+        AlertDialog dialog=fullForm("撤銷錯誤紀錄",layout,"確認撤銷");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             if(reason.getText().toString().trim().isEmpty())throw new IllegalArgumentException("請填撤銷原因");JSONArray rows=data(key);
             for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getString("id").equals(row.getString("id")))rows.getJSONObject(i).put("void",true).put("voidReason",reason.getText().toString().trim()).put("voidDate",today().toString());
@@ -1248,9 +1339,10 @@ public class MainActivity extends Activity {
     private void showPanel(String title,LinearLayout layout,Runnable refresh) {showPanel(title,layout,refresh,()->title);}
     private void showPanel(String title,LinearLayout layout,Runnable refresh,java.util.function.Supplier<String> currentTitle) {
         LinearLayout page=form();page.setPadding(dp(16),dp(12),dp(16),dp(12));page.setBackgroundColor(Color.rgb(248,244,237));
-        TextView heading=text(title,21,Color.rgb(83,60,40));heading.setTypeface(null,Typeface.BOLD);page.addView(heading);
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();
+        LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);Button back=iconButton(R.drawable.action_back,"返回上一頁");back.setOnClickListener(v->dialog.dismiss());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        TextView heading=text(title,20,Color.rgb(83,60,40));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));page.addView(toolbar);
         ScrollView scroll=new ScrollView(this);layout.setPadding(0,dp(8),0,dp(12));scroll.addView(layout);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        AlertDialog dialog=new AlertDialog.Builder(this).setView(page).create();Button close=styledButton("關閉",false,false);close.setOnClickListener(v->dialog.dismiss());page.addView(close,new LinearLayout.LayoutParams(-1,-2));
         if(refresh!=null)livePanels.put(dialog,()->{int y=scroll.getScrollY();refresh.run();heading.setText(currentTitle.get());scroll.post(()->scroll.scrollTo(0,y));});
         dialog.setOnDismissListener(d->livePanels.remove(dialog));dialog.show();
         if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
@@ -1299,7 +1391,7 @@ public class MainActivity extends Activity {
     private void reconciliationForm(JSONObject account,String date) {
         LinearLayout layout=form();EditText actual=labeledNumber(layout,"存摺當日結束餘額／點算現金");EditText note=labeledField(layout,"核對備註");
         layout.addView(text("只記錄比對差額，不修改帳面、不自動補收入或支出。請先補齊未對應的收款與交易。",14,Color.DKGRAY));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(date+" 對帳").setView(layout).setNegativeButton("取消",null).setPositiveButton("預覽",null).create();
+        AlertDialog dialog=fullForm(date+" 對帳",layout,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             long book=balance(account,date),real=amount(actual,false);JSONObject row=new JSONObject().put("id",UUID.randomUUID().toString()).put("accountId",account.getString("id")).put("date",date).put("actual",real).put("book",book).put("note",note.getText().toString().trim());
             new AlertDialog.Builder(this).setMessage(display(String.valueOf("帳面 $"+book+"\n實際 $"+real+"\n差額（實際－帳面）$"+(real-book)+"\n保存不會改變任何餘額。"))).setNegativeButton("修改",null).setPositiveButton("保存核對紀錄",(d,b)->{try{
@@ -1311,7 +1403,7 @@ public class MainActivity extends Activity {
     private void editOpening(JSONObject account) {
         LinearLayout layout=form();EditText date=dateField(layout,"修正起算日",false);date.setText(account.optString("start"));EditText opening=labeledNumber(layout,"修正起算日開始前餘額");opening.setText(account.optString("opening"));EditText reason=labeledField(layout,"修正原因，請先匯出備份");
         layout.addView(text("僅用於期初設定填錯；不是補帳或對帳調整。修改會依新起算日重算所有帳面餘額，原對帳快照保留。",14,Color.DKGRAY));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("修正期初設定").setView(layout).setNegativeButton("取消",null).setPositiveButton("預覽變更",null).create();
+        AlertDialog dialog=fullForm("修正期初設定",layout,"核對");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             String start=dateValue(date);LocalDate.parse(start);long value=amount(opening,false);String note=reason.getText().toString().trim();if(note.isEmpty())throw new IllegalArgumentException("請填修正原因");
             new AlertDialog.Builder(this).setMessage(display(String.valueOf("原起算 "+account.optString("start")+" · 期初 $"+account.optLong("opening")+"\n改為 "+start+" · 期初 $"+value+"\n這會重算帳面，並保留修正原因；不新增交易。"))).setNegativeButton("取消",null).setPositiveButton("確認修正期初",(d,b)->{try{
@@ -1326,7 +1418,7 @@ public class MainActivity extends Activity {
     private void ownerManager(){
         LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{primaryAction("＋ 新增房東",()->ownerForm(null));card("歸屬設定","每個不動產與帳戶可指定一位房東；未指定的資料不會出現在任何房東雲端報表。既有帳務不會自動移動或改金額。");JSONArray owners=data("owners");for(int i=0;i<owners.length();i++){JSONObject owner=owners.getJSONObject(i);LinearLayout box=card(owner.getString("name"),owner.getString("email"));cardAction(box,"修改房東",()->ownerForm(owner));cardAction(box,"管理報表連結",()->reportLinks("owner",owner.optString("id")));}for(String key:new String[]{"properties","accounts"}){JSONArray rows=data(key);for(int i=0;i<rows.length();i++){JSONObject item=rows.getJSONObject(i),owner=find("owners",item.optString("ownerId"));LinearLayout box=card((key.equals("properties")?"不動產：":"帳戶：")+item.getString("name"),owner==null?"尚未指定房東":owner.getString("name"));cardAction(box,"指定房東",()->assignOwner(key,item));}}}catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("房東與歸屬管理",layout,refresh);
     }
-    private void ownerForm(JSONObject original){LinearLayout layout=form();EditText name=field(layout,"房東名稱"),email=field(layout,"查看報表用 Gmail");if(original!=null){name.setText(original.optString("name"));email.setText(original.optString("email"));}AlertDialog dialog=new AlertDialog.Builder(this).setTitle(original==null?"新增房東":"修改房東").setView(layout).setNegativeButton("取消",null).setPositiveButton("儲存",null).create();dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{String n=requiredText(name),e=requiredText(email).toLowerCase(Locale.ROOT);if(!Owners.email(e))throw fieldError(email,"請填有效 Gmail");if(original!=null&&!e.equalsIgnoreCase(original.optString("email")))requireUnshared("owner",original.getString("id"));JSONObject row=original==null?new JSONObject().put("id",UUID.randomUUID().toString()):new JSONObject(original.toString());row.put("name",n).put("email",e);JSONArray rows=data("owners");if(original==null)rows.put(row);else for(int i=0;i<rows.length();i++)if(row.getString("id").equals(rows.getJSONObject(i).getString("id")))rows.put(i,row);if(saveChecked("owners",rows)){dialog.dismiss();render();}}catch(Exception e){error(e);}}));dialog.show();}
+    private void ownerForm(JSONObject original){LinearLayout layout=form();EditText name=field(layout,"房東名稱"),email=field(layout,"查看報表用 Gmail");if(original!=null){name.setText(original.optString("name"));email.setText(original.optString("email"));}AlertDialog dialog=fullForm(original==null?"新增房東":"修改房東",layout,"儲存");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{String n=requiredText(name),e=requiredText(email).toLowerCase(Locale.ROOT);if(!Owners.email(e))throw fieldError(email,"請填有效 Gmail");if(original!=null&&!e.equalsIgnoreCase(original.optString("email")))requireUnshared("owner",original.getString("id"));JSONObject row=original==null?new JSONObject().put("id",UUID.randomUUID().toString()):new JSONObject(original.toString());row.put("name",n).put("email",e);JSONArray rows=data("owners");if(original==null)rows.put(row);else for(int i=0;i<rows.length();i++)if(row.getString("id").equals(rows.getJSONObject(i).getString("id")))rows.put(i,row);if(saveChecked("owners",rows)){dialog.dismiss();render();}}catch(Exception e){error(e);}}));dialog.show();}
     private void assignOwner(String key,JSONObject item){try{JSONArray owners=data("owners");String[] options=new String[owners.length()+1];options[0]="尚未指定（不公開）";for(int i=0;i<owners.length();i++)options[i+1]=owners.getJSONObject(i).getString("name");new AlertDialog.Builder(this).setTitle(item.optString("name")+"：指定房東").setItems(options,(d,n)->{try{String id=n==0?"":owners.getJSONObject(n-1).getString("id"),old=item.optString("ownerId");if(!id.equals(old)){if(!old.isEmpty())requireUnshared("owner",old);if(!id.isEmpty())requireUnshared("owner",id);}JSONArray rows=data(key);for(int i=0;i<rows.length();i++)if(item.getString("id").equals(rows.getJSONObject(i).getString("id")))rows.getJSONObject(i).put("ownerId",id);if(saveChecked(key,rows))render();}catch(Exception e){error(e);}}).setNegativeButton("取消",null).show();}catch(Exception e){error(e);}}
     private void reportLinks(String audience,String id){
         LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{JSONObject recipient=find(audience.equals("owner")?"owners":"leases",id);if(recipient==null)return;String email=recipient.optString("email");card(audience.equals("owner")?recipient.optString("name"):recipient.optString("unitCodeSnapshot"),"查看帳號："+email);JSONObject link=reportShare(audience,id);card("分享狀態",link==null?"尚未同步或確認分享權限":link.optString("status").equals("revoked")?"上次已確認停止分享 · "+syncTime(link.optString("syncedAt")):!link.optString("status").equals("shared")?"分享狀態待確認，請重新同步或停止分享":"上次確認可查看 · "+syncTime(link.optString("syncedAt"))+"\n帳號："+link.optString("email")+"\n手機修改後需要重新同步；狀態以 Google 實際權限為準。");
@@ -1391,7 +1483,7 @@ public class MainActivity extends Activity {
     private void receiptAccountForm(JSONObject receipt,List<JSONObject> accounts) {
         LinearLayout layout=form();Spinner selected=accountChoice(layout,accounts,"核對後的實際收款帳戶");for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("id").equals(receipt.optString("accountId")))selected.setSelection(i);
         layout.addView(text("原記錄："+receipt.optString("account")+"\n目前對應："+accountName(receipt.optString("accountId"))+"\n只更正帳戶關聯，不重複收款或改帳單分配。",14,Color.DKGRAY));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("對應／更正收款帳戶").setView(layout).setNegativeButton("取消",null).setPositiveButton("確認核對後帳戶",null).create();
+        AlertDialog dialog=fullForm("對應／更正收款帳戶",layout,"確認核對後帳戶");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             JSONArray latest=data("receipts");for(int j=0;j<latest.length();j++)if(latest.getJSONObject(j).getString("id").equals(receipt.getString("id")))latest.getJSONObject(j).put("accountId",accounts.get(selected.getSelectedItemPosition()).getString("id"));
             if(saveChecked("receipts",latest)){dialog.dismiss();render();Toast.makeText(this,"帳戶對應已保存",Toast.LENGTH_LONG).show();}
@@ -1464,13 +1556,19 @@ public class MainActivity extends Activity {
     private boolean leaseAttachmentPending(){if(getSharedPreferences("workflow",MODE_PRIVATE).contains("pendingLeaseAttachment")){Toast.makeText(this,"附件正在處理，請稍候",Toast.LENGTH_SHORT).show();return true;}return false;}
     private Button leaseAttachmentButton(String label){Button button=styledButton(label,false,false);button.setTextSize(13);button.setMinWidth(0);button.setMinimumWidth(0);button.setPadding(dp(4),0,dp(4),0);return button;}
     private void drawLeaseAttachments(LeaseEditorSession editor,LinearLayout layout){
-        layout.removeAllViews();String photo=editor.attachments.optString("photo"),pdf=editor.attachments.optString("pdf");
-        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(4),0,dp(10));layout.addView(row,new LinearLayout.LayoutParams(-1,-2));
-        android.widget.FrameLayout thumbnail=new android.widget.FrameLayout(this);LinearLayout.LayoutParams thumbParams=new LinearLayout.LayoutParams(dp(80),dp(80));thumbParams.rightMargin=dp(12);row.addView(thumbnail,thumbParams);
-        if(!photo.isEmpty()){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),10));image.setClipToOutline(true);thumbnail.addView(image,new android.widget.FrameLayout.LayoutParams(-1,-1));loadExpenseThumbnail(image,photo);image.setOnClickListener(v->viewMeterPhoto(photo));Button remove=leaseAttachmentButton("×");remove.setTextSize(22);remove.setBackground(surface(Color.argb(235,255,252,247),20));remove.setContentDescription("移除起始電表照片，儲存後生效");thumbnail.addView(remove,new android.widget.FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END));remove.setOnClickListener(v->{try{if(leaseAttachmentPending())return;LeaseAttachments.remove(editor.attachments,false);editor.refresh.run();}catch(Exception e){error(e);}});}else{TextView empty=text("照片",14,Color.GRAY);empty.setGravity(Gravity.CENTER);empty.setBackground(surface(Color.rgb(239,237,233),10));thumbnail.addView(empty,new android.widget.FrameLayout.LayoutParams(-1,-1));}
-        LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);info.addView(text("起始電表照片",14,Color.rgb(90,61,37)));info.addView(text(photo.isEmpty()?"尚未附上":"已選取 · 點縮圖查看",12,Color.GRAY));row.addView(info,new LinearLayout.LayoutParams(0,-2,1));Button choosePhoto=leaseAttachmentButton(photo.isEmpty()?"新增":"更換");row.addView(choosePhoto,new LinearLayout.LayoutParams(dp(72),dp(48)));choosePhoto.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("起始電表照片").setItems(new String[]{"拍照","從相簿選取"},(d,n)->pickLeaseAttachment(editor,n==0?CAMERA_LEASE_ATTACHMENT:PICK_LEASE_PHOTO)).setNegativeButton("取消",null).show());
-        View line=new View(this);line.setBackgroundColor(Color.rgb(228,216,200));layout.addView(line,new LinearLayout.LayoutParams(-1,dp(1)));
-        LinearLayout pdfRow=new LinearLayout(this);pdfRow.setGravity(Gravity.CENTER_VERTICAL);pdfRow.setPadding(0,dp(8),0,dp(4));layout.addView(pdfRow,new LinearLayout.LayoutParams(-1,-2));LinearLayout pdfInfo=new LinearLayout(this);pdfInfo.setOrientation(LinearLayout.VERTICAL);pdfInfo.addView(text("PDF 合約",14,Color.rgb(90,61,37)));TextView name=text(pdf.isEmpty()?"尚未附上":editor.attachments.optString("pdfName","租賃合約.pdf"),13,Color.GRAY);name.setMaxLines(4);name.setEllipsize(android.text.TextUtils.TruncateAt.END);pdfInfo.addView(name);pdfRow.addView(pdfInfo,new LinearLayout.LayoutParams(0,-2,1));if(!pdf.isEmpty()){pdfInfo.setContentDescription("開啟所選 PDF 合約");pdfInfo.setOnClickListener(v->{try{viewContract(new JSONObject().put("contractFile",pdf));}catch(Exception e){error(e);}});Button more=leaseAttachmentButton("⋯");more.setContentDescription("PDF 合約操作");pdfRow.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{PopupMenu menu=new PopupMenu(this,more);menu.getMenu().add("開啟 PDF");menu.getMenu().add("移除 PDF");menu.setOnMenuItemClickListener(item->{try{if(item.getTitle().toString().equals("移除 PDF")){if(leaseAttachmentPending())return true;LeaseAttachments.remove(editor.attachments,true);editor.refresh.run();}else viewContract(new JSONObject().put("contractFile",pdf));}catch(Exception e){error(e);}return true;});menu.show();});}Button choosePdf=leaseAttachmentButton(pdf.isEmpty()?"選取":"更換");pdfRow.addView(choosePdf,new LinearLayout.LayoutParams(dp(72),dp(48)));choosePdf.setOnClickListener(v->pickLeaseAttachment(editor,PICK_LEASE_PDF));
+        layout.removeAllViews();
+        for(boolean isPdf:new boolean[]{false,true}){
+            String file=editor.attachments.optString(isPdf?"pdf":"photo");
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(6),0,dp(6));layout.addView(row,new LinearLayout.LayoutParams(-1,-2));
+            if(!isPdf&&!file.isEmpty()){
+                ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),8));image.setClipToOutline(true);image.setContentDescription("查看起始電表照片");row.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));loadExpenseThumbnail(image,file);image.setOnClickListener(v->viewMeterPhoto(file));
+            }else{ImageView icon=new ImageView(this);icon.setImageResource(isPdf?R.drawable.action_document:R.drawable.action_photo);icon.setColorFilter(Color.rgb(100,67,43));icon.setPadding(dp(16),dp(16),dp(16),dp(16));row.addView(icon,new LinearLayout.LayoutParams(dp(64),dp(64)));}
+            LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);info.setPadding(dp(10),0,dp(6),0);info.addView(text(isPdf?"PDF 合約":"起始電表照片",14,Color.rgb(90,61,37)));TextView name=text(file.isEmpty()?"尚未附上":isPdf?editor.attachments.optString("pdfName","租賃合約.pdf"):"已選取 · 點縮圖查看",12,Color.GRAY);name.setMaxLines(3);name.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(name);row.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+            if(!file.isEmpty())info.setOnClickListener(v->{try{if(isPdf)viewContract(new JSONObject().put("contractFile",file));else viewMeterPhoto(file);}catch(Exception e){error(e);}});
+            Button operation=iconButton(file.isEmpty()?R.drawable.action_add:R.drawable.action_more,(file.isEmpty()?"新增":"更多操作")+(isPdf?" PDF 合約":"起始電表照片"));row.addView(operation,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            Runnable choose=()->{if(isPdf)pickLeaseAttachment(editor,PICK_LEASE_PDF);else new AlertDialog.Builder(this).setTitle("起始電表照片").setItems(new String[]{"拍照","從相簿選取"},(d,n)->pickLeaseAttachment(editor,n==0?CAMERA_LEASE_ATTACHMENT:PICK_LEASE_PHOTO)).setNegativeButton("取消",null).show();};
+            operation.setOnClickListener(v->{if(file.isEmpty()){choose.run();return;}RecordMenu menu=new RecordMenu();menu.labels.add(isPdf?"更換 PDF":"更換照片");menu.actions.add(choose);menu.labels.add(isPdf?"移除 PDF":"移除照片");menu.actions.add(()->{try{if(leaseAttachmentPending())return;LeaseAttachments.remove(editor.attachments,isPdf);editor.refresh.run();}catch(Exception e){error(e);}});openOperations(operation,menu);});
+        }
     }
     private void restoreLeaseEditor(JSONObject state)throws JSONException{
         JSONObject unit=find("units",state.getString("unitId"));if(unit==null)throw new IllegalArgumentException("出租單位不存在，無法恢復租約草稿");leaseForm(unit,state.isNull("original")?null:state.getJSONObject("original"),state);
@@ -1515,7 +1613,7 @@ public class MainActivity extends Activity {
         File file=new File(photoDir(),pending.optString("file"));if(result!=RESULT_OK||(request==PICK_INITIAL&&(intent==null||intent.getData()==null))){file.delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingInitialPhoto").commit();return;}
         Uri uri=intent==null?null:intent.getData();AlertDialog progress=busy("正在讀取起始電表照片…");new Thread(()->{try{
             if(request==PICK_INITIAL)try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(file)){if(in==null)throw new IOException();byte[] buffer=new byte[8192];long total=0;int n;while((n=in.read(buffer))!=-1){total+=n;if(total>BackupArchive.PHOTO_LIMIT)throw new IOException("照片超過25MB");out.write(buffer,0,n);}}
-            android.graphics.Bitmap bitmap=photoPreview(file);runOnUiThread(()->{progress.dismiss();boolean[] saved={false};LinearLayout layout=form();layout.addView(text("起始電表照片 · "+pending.optString("leaseId"),13,Color.DKGRAY));ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setImageBitmap(bitmap);layout.addView(image,new LinearLayout.LayoutParams(-1,dp(240)));AlertDialog confirm=new AlertDialog.Builder(this).setTitle("確認起始電表照片").setView(layout).setNegativeButton("取消",null).setPositiveButton("儲存照片",null).create();confirm.setOnDismissListener(d->{if(!saved[0])file.delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingInitialPhoto").commit();});confirm.setOnShowListener(d->confirm.getButton(-1).setOnClickListener(v->{try{JSONObject current=find("leases",pending.getString("leaseId"));if(current==null||!current.toString().equals(pending.getString("snapshot")))throw new IllegalArgumentException("租約已變更，請重新選取照片");JSONArray next=data("leases");for(int i=0;i<next.length();i++)if(pending.getString("leaseId").equals(next.getJSONObject(i).optString("id")))next.getJSONObject(i).put("initialMeterPhoto",file.getName());if(saveChecked("leases",next)){saved[0]=true;confirm.dismiss();render();refreshPanels();Toast.makeText(this,"起始電表照片已保存",Toast.LENGTH_LONG).show();}}catch(Exception e){error(e);}}));confirm.show();});
+            android.graphics.Bitmap bitmap=photoPreview(file);runOnUiThread(()->{progress.dismiss();boolean[] saved={false};LinearLayout layout=form();layout.addView(text("起始電表照片 · "+pending.optString("leaseId"),13,Color.DKGRAY));ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setImageBitmap(bitmap);layout.addView(image,new LinearLayout.LayoutParams(-1,dp(240)));AlertDialog confirm=fullForm("確認起始電表照片",layout,"儲存照片");confirm.setOnDismissListener(d->{if(!saved[0])file.delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingInitialPhoto").commit();});confirm.setOnShowListener(d->confirm.getButton(-1).setOnClickListener(v->{try{JSONObject current=find("leases",pending.getString("leaseId"));if(current==null||!current.toString().equals(pending.getString("snapshot")))throw new IllegalArgumentException("租約已變更，請重新選取照片");JSONArray next=data("leases");for(int i=0;i<next.length();i++)if(pending.getString("leaseId").equals(next.getJSONObject(i).optString("id")))next.getJSONObject(i).put("initialMeterPhoto",file.getName());if(saveChecked("leases",next)){saved[0]=true;confirm.dismiss();render();refreshPanels();Toast.makeText(this,"起始電表照片已保存",Toast.LENGTH_LONG).show();}}catch(Exception e){error(e);}}));confirm.show();});
         }catch(Exception e){file.delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingInitialPhoto").commit();runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("照片讀取失敗，請選擇可開啟且25MB以下的圖片；租約仍已儲存"));});}}).start();
     }
     private void pickContract(String leaseId){
@@ -1546,7 +1644,7 @@ public class MainActivity extends Activity {
                 LinearLayout meterBox=card(r.getString("month")+" · 抄表日 "+r.getString("date"),"電表 "+fmt(r.getLong("previous"))+" → "+fmt(r.getLong("current"))+" · 用量 "+fmt(r.getLong("current")-r.getLong("previous"))+" 度\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷錯誤紀錄":""));
                 if(r.getBoolean("void"))markVoided(meterBox);
                 if(!r.getString("file").isEmpty())cardAction(meterBox,"照片",()->viewMeterPhoto(r.optString("file")));
-                if(!r.getBoolean("void"))cardAction(meterBox,"撤銷",()->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}});
+                if(!r.getBoolean("void"))recordAction(meterBox,"撤銷",()->new AlertDialog.Builder(this).setTitle("撤銷抄表紀錄？").setMessage("已開帳單不會改動；撤銷後不再帶入新帳單。").setNegativeButton("取消",null).setPositiveButton("確認撤銷",(d,w)->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}}).show());
             }
         }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("抄電表／照片",layout,refresh);
     }
@@ -1559,7 +1657,7 @@ public class MainActivity extends Activity {
         Runnable loadPrevious=()->{try{JSONObject previous=MeterReadings.previousPeriod(data("meterReadings"),data("invoices"),lease.optString("id"),dateValue(month));prior.setText(previous==null?LeaseFiles.initialReading(lease,dateValue(month)):previous.optString("current"));current.setText("");origin.setText(previous==null?(LeaseFiles.initialReading(lease,dateValue(month)).isEmpty()?"上一個月份沒有紀錄，請自行填上期讀數。":"已帶入租約起始電度；請核對。"):"已帶入 "+previous.optString("month")+" "+previous.optString("source")+" 的本期讀數；可自行修正。");}catch(Exception e){origin.setText("請先選擇用電帳單月份。");}};
         month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){loadPrevious.run();}public void afterTextChanged(Editable e){}});loadPrevious.run();
         layout.addView(text("照片是讀數依據。同一租約只帶入上一個月份，不沿用其他租客。缺月份或換表請自行確認起始讀數。",14,Color.DKGRAY));
-        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("新增抄表紀錄").setView(scroll).setNegativeButton("取消",null).setNeutralButton("只存讀數",null).setPositiveButton("附上照片",null).create();
+        ScrollView scroll=new ScrollView(this);scroll.addView(layout);AlertDialog dialog=new FullFormDialog("新增抄表紀錄",scroll,"附上照片","只存讀數");
         dialog.setOnShowListener(v->{dialog.getButton(-3).setOnClickListener(w->{try{JSONObject row=MeterReadings.reading(lease,dateValue(month),dateValue(date),amount(prior,false),amount(current,false),"",note.getText().toString());confirmMeterPhoto(row,dialog);}catch(Exception e){error(e);}});
             dialog.getButton(-1).setOnClickListener(w->{try{JSONObject row=MeterReadings.reading(lease,dateValue(month),dateValue(date),amount(prior,false),amount(current,false),UUID.randomUUID()+".jpg",note.getText().toString());
                 new AlertDialog.Builder(this).setTitle("電表照片來源").setItems(new String[]{"開啟相機拍照","從相簿／檔案選照片"},(d,n)->{try{
@@ -1577,7 +1675,7 @@ public class MainActivity extends Activity {
     private void confirmMeterPhoto(JSONObject row,AlertDialog source) {
         try{LinearLayout layout=form();layout.addView(text(row.getString("month")+" · "+row.getString("date")+"\n電表 "+fmt(row.getLong("previous"))+" → "+fmt(row.getLong("current"))+"\n"+row.getString("note")+"\n確認只保存抄表紀錄；不直接開帳單。",16,Color.DKGRAY));
             String file=row.getString("file");if(!file.isEmpty()){ImageView preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setImageBitmap(photoPreview(new File(photoDir(),file)));layout.addView(preview,new LinearLayout.LayoutParams(-1,dp(220)));preview.setOnClickListener(v->viewMeterPhoto(file));layout.addView(text("點照片可用圖片程式查看原圖；請核對讀數清楚。",14,Color.DKGRAY));}
-            ScrollView scroll=new ScrollView(this);scroll.addView(layout);boolean[] saved={false};AlertDialog confirm=new AlertDialog.Builder(this).setTitle("確認抄表與照片").setView(scroll).setNegativeButton("取消",null).setPositiveButton("儲存",null).create();confirm.setOnDismissListener(d->{if(!saved[0]&&!file.isEmpty())new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();});
+            ScrollView scroll=new ScrollView(this);scroll.addView(layout);boolean[] saved={false};AlertDialog confirm=fullForm("確認抄表與照片",scroll,"儲存");confirm.setOnDismissListener(d->{if(!saved[0]&&!file.isEmpty())new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();});
             confirm.setOnShowListener(v->confirm.getButton(-1).setOnClickListener(w->{try{JSONArray next=data("meterReadings");for(int i=0;i<next.length();i++)if(next.getJSONObject(i).getString("id").equals(row.getString("id")))return;next.put(row);if(saveChecked("meterReadings",next)){saved[0]=true;confirm.dismiss();if(source!=null)source.dismiss();render();Toast.makeText(this,"抄表紀錄已保存，可開帳單帶入讀數",Toast.LENGTH_LONG).show();}}catch(Exception e){error(e);}}));confirm.show();
         }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();try{if(!row.getString("file").isEmpty())new File(photoDir(),row.getString("file")).delete();}catch(Exception ignored){}error(e);}
     }
