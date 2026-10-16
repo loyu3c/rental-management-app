@@ -90,4 +90,31 @@ public class FormInputTest {
     @Test public void expenseAcceptsDescriptionText() throws Exception {
         open("expenseForm",new Class<?>[]{});typeWithKeyboard("項目／備註");
     }
+
+    private AccessibilityNodeInfo labelled(AccessibilityNodeInfo node,String label,boolean clickable){
+        if(node==null)return null;
+        String text=String.valueOf(node.getText())+" "+node.getContentDescription();
+        if(text.contains(label)&&(!clickable||node.isClickable()))return node;
+        for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo found=labelled(node.getChild(i),label,clickable);if(found!=null)return found;}
+        return null;
+    }
+    private AccessibilityNodeInfo awaitLabel(String label,boolean clickable){
+        long until=SystemClock.uptimeMillis()+8000;
+        do{AccessibilityNodeInfo node=labelled(instrumentation.getUiAutomation().getRootInActiveWindow(),label,clickable);if(node!=null)return node;SystemClock.sleep(100);}while(SystemClock.uptimeMillis()<until);
+        throw new AssertionError("Missing UI label: "+label);
+    }
+    @Test public void resetSearchRestoresExpenseWithoutChangingLedger() throws Exception {
+        Context context=instrumentation.getTargetContext();
+        String records="[{\"id\":\"e\",\"date\":\"2026-10-01\",\"accountId\":\"a\",\"category\":\"repair\",\"description\":\"Repair check\",\"amount\":900,\"splits\":[{\"propertyId\":\"p\",\"amount\":900}]}]";
+        context.getSharedPreferences("catalog",0).edit().putString("expenses",records).commit();
+        java.lang.reflect.Field selected=MainActivity.class.getDeclaredField("selected");selected.setAccessible(true);
+        instrumentation.runOnMainSync(()->{try{selected.setInt(activity,2);}catch(Exception e){throw new RuntimeException(e);}});
+        open("render",new Class<?>[]{});
+        assertTrue(awaitLabel("搜尋與篩選",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));
+        typeWithKeyboard("搜尋項目");
+        awaitLabel("沒有符合條件的紀錄",false);
+        assertTrue(awaitLabel("重設搜尋與篩選",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));
+        awaitLabel("Repair check",false);
+        assertEquals(records,context.getSharedPreferences("catalog",0).getString("expenses",null));
+    }
 }

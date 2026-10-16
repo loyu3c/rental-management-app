@@ -172,6 +172,28 @@ public class MainActivity extends Activity {
     private void listHeader(String title,String addLabel,Runnable add){
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView label=text(title,19,Color.rgb(77,57,39));label.setTypeface(null,Typeface.BOLD);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));Button button=styledButton("＋ "+addLabel,false,false);button.setTextSize(13);button.setOnClickListener(v->add.run());row.addView(button,new LinearLayout.LayoutParams(-2,-2));LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);rowParams.setMargins(0,dp(4),0,dp(8));body.addView(row,rowParams);
     }
+    private final Map<String,Boolean> expandedFilters=new HashMap<>();
+    private final class FilterPanel {
+        final LinearLayout controls;final TextView summary;final Button reset;
+        FilterPanel(LinearLayout parent,String key){
+            LinearLayout row=new LinearLayout(MainActivity.this);row.setGravity(Gravity.CENTER_VERTICAL);
+            Button toggle=styledButton("搜尋與篩選",false,false);android.graphics.drawable.Drawable icon=getDrawable(R.drawable.action_filter).mutate();icon.setTint(Color.rgb(100,67,43));icon.setBounds(0,0,dp(18),dp(18));toggle.setCompoundDrawables(icon,null,null,null);toggle.setCompoundDrawablePadding(dp(8));toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
+            row.addView(toggle,new LinearLayout.LayoutParams(0,-2,1));reset=styledButton("重設",false,false);reset.setTextSize(13);reset.setContentDescription("重設搜尋與篩選");LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-2,-2);rp.leftMargin=dp(8);row.addView(reset,rp);LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);rowParams.bottomMargin=dp(6);parent.addView(row,rowParams);
+            controls=new LinearLayout(MainActivity.this);controls.setOrientation(LinearLayout.VERTICAL);controls.setVisibility(expandedFilters.getOrDefault(key,false)?View.VISIBLE:View.GONE);parent.addView(controls,new LinearLayout.LayoutParams(-1,-2));
+            summary=text("目前：",13,Color.DKGRAY);parent.addView(summary,new LinearLayout.LayoutParams(-1,-2));
+            Runnable label=()->{boolean open=controls.getVisibility()==View.VISIBLE;toggle.setText("搜尋與篩選"+(open?"  ⌃":"  ⌄"));toggle.setContentDescription("搜尋與篩選，"+(open?"已展開":"已收合"));};label.run();
+            toggle.setOnClickListener(v->{boolean open=controls.getVisibility()!=View.VISIBLE;controls.setVisibility(open?View.VISIBLE:View.GONE);expandedFilters.put(key,open);label.run();});
+        }
+    }
+    private void photoAttachmentRow(LinearLayout parent,String title,String file,Runnable remove){photoAttachmentRow(parent,title,file,remove,null);}
+    private void photoAttachmentRow(LinearLayout parent,String title,String file,Runnable remove,Runnable replace){
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(4),0,dp(4));
+        ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),8));image.setClipToOutline(true);row.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));loadExpenseThumbnail(image,file);
+        LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);info.setPadding(dp(10),0,dp(8),0);info.addView(text(title,14,Color.rgb(90,61,37)));info.addView(text("點縮圖查看原圖",12,Color.GRAY));row.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+        image.setContentDescription("查看"+title);image.setOnClickListener(v->viewMeterPhoto(file));info.setContentDescription("查看"+title);info.setOnClickListener(v->viewMeterPhoto(file));
+        if(remove!=null){Button more=iconButton(R.drawable.action_more,title+"操作");row.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{RecordMenu menu=new RecordMenu();menu.labels.add("查看照片");menu.actions.add(()->viewMeterPhoto(file));if(replace!=null){menu.labels.add("更換照片");menu.actions.add(replace);}menu.labels.add("移除照片");menu.actions.add(remove);openOperations(more,menu);});}
+        parent.addView(row,new LinearLayout.LayoutParams(-1,-2));
+    }
     private void settingsScreen(){
         LinearLayout layout=form();LinearLayout previous=body;body=layout;
         try{card("連線與資料","Google 報表需手動更新；完整備份包含手機帳務與附件。");action("Google 連線設定與測試",this::googleSyncSettings);action("匯出完整備份",this::exportBackup);action("從檔案還原資料",this::importBackup);action("支出類別管理",this::categoryManager);action("對應／更正舊收款帳戶",this::linkReceipts);}finally{body=previous;}showPanel("設定",layout);
@@ -454,10 +476,10 @@ public class MainActivity extends Activity {
         recordAction(propertyOverview,"修改不動產名稱",()->editName("properties",property,"name","不動產名稱"));
         if(property.optString("type").equals("建築物"))recordAction(propertyOverview,"切換整棟／分房出租",()->rentalMode(property));
         listHeader("出租單位","新增單位",()->addUnit(property.optString("id"),property.optString("name")));
-        String listProperty=propertyId;
-        EditText search=field(body,"搜尋代號或租客姓名");search.setText(propertySearches.getOrDefault(listProperty,""));
-        Spinner filter=choice(body,"出租狀態",new String[]{"啟用出租","全部（含停用）","停用出租","出租中","未出租","待起租","租約已到期","未建租約"});
-        Spinner sort=choice(body,new String[]{"代號由小到大","代號由大到小"});filter.setSelection(propertyFilters.getOrDefault(listProperty,0));sort.setSelection(propertySorts.getOrDefault(listProperty,0));
+        String listProperty=propertyId;FilterPanel panel=new FilterPanel(body,"units:"+listProperty);
+        EditText search=field(panel.controls,"搜尋代號或租客姓名");search.setText(propertySearches.getOrDefault(listProperty,""));
+        Spinner filter=choice(panel.controls,"出租狀態",new String[]{"啟用出租","全部（含停用）","停用出租","出租中","未出租","待起租","租約已到期","未建租約"});
+        Spinner sort=choice(panel.controls,new String[]{"代號由小到大","代號由大到小"});filter.setSelection(propertyFilters.getOrDefault(listProperty,0));sort.setSelection(propertySorts.getOrDefault(listProperty,0));
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
             propertySearches.put(listProperty,search.getText().toString());propertyFilters.put(listProperty,filter.getSelectedItemPosition());propertySorts.put(listProperty,sort.getSelectedItemPosition());
@@ -466,13 +488,14 @@ public class MainActivity extends Activity {
                 if(!propertyId.equals(u.optString("propertyId"))||!(u.optString("code")+" "+currentTenant(u)).toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
                 String selectedStatus=filter.getSelectedItem().toString();if(selectedStatus.equals("啟用出租")&&!RentalUnits.enabled(u))continue;if(selectedStatus.equals("停用出租")&&RentalUnits.enabled(u))continue;if(filter.getSelectedItemPosition()>=3&&(!RentalUnits.enabled(u)||(selectedStatus.equals("未出租")?st.startsWith("出租中"):!st.startsWith(selectedStatus))))continue;rows.add(u);}
             rows.sort((x,y)->natural(x.optString("code"),y.optString("code"))*(sort.getSelectedItemPosition()==0?1:-1));
+            panel.summary.setText("目前："+filter.getSelectedItem()+" · "+sort.getSelectedItem()+" · "+rows.size()+" 個單位"+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));
             LinearLayout previous=body;body=list;
             for(JSONObject u:rows)unitOccupancyCard(u);
             if(rows.isEmpty())card("沒有符合的單位","可調整搜尋或篩選條件。");body=previous;
         };
         search.addTextChangedListener(new TextWatcher(){ public void beforeTextChanged(CharSequence s,int st,int c,int a){} public void onTextChanged(CharSequence s,int st,int b,int c){refresh.run();}public void afterTextChanged(Editable e){} });
         AdapterView.OnItemSelectedListener listener=new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){refresh.run();}public void onNothingSelected(AdapterView<?> p){}};
-        filter.setOnItemSelectedListener(listener);sort.setOnItemSelectedListener(listener);refresh.run();
+        filter.setOnItemSelectedListener(listener);sort.setOnItemSelectedListener(listener);panel.reset.setOnClickListener(v->{search.setText("");filter.setSelection(0);sort.setSelection(0);refresh.run();});refresh.run();
     }
     private void unitScreen(JSONObject property,JSONObject unit) {
         LinearLayout unitBox=card(unit.optString("code"),unit.optString("type")+" · "+status(unit)+"\n"+tenantLabel(unit));
@@ -720,11 +743,13 @@ public class MainActivity extends Activity {
     }
     private void paymentHistory(){LinearLayout layout=form();Runnable refresh=paymentHistoryContent(layout);showPanel("收款紀錄查詢",layout,refresh);}
     private Runnable paymentHistoryContent(LinearLayout layout) {
-        Spinner scope=choice(layout,"月份範圍",new String[]{"指定月份","全部月份"});
-        EditText month=dateField(layout,"交易月份",true);month.setText(YearMonth.from(today()).toString());View monthRow=(View)month.getParent();
-        Spinner kind=choice(layout,"收款類型",new String[]{"全部","租金水電","收到押金","退還押金","結算補繳"});
-        EditText search=labeledField(layout,"搜尋租客／單位／帳戶／備註");LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list,new LinearLayout.LayoutParams(-1,-2));int[] limit={20};
+        FilterPanel panel=new FilterPanel(layout,"payments");
+        Spinner scope=choice(panel.controls,"月份範圍",new String[]{"指定月份","全部月份"});
+        EditText month=dateField(panel.controls,"交易月份",true);month.setText(YearMonth.from(today()).toString());View monthRow=(View)month.getParent();
+        Spinner kind=choice(panel.controls,"收款類型",new String[]{"全部","租金水電","收到押金","退還押金","結算補繳"});
+        EditText search=labeledField(panel.controls,"搜尋租客／單位／帳戶／備註");LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list,new LinearLayout.LayoutParams(-1,-2));int[] limit={20};
         Runnable[] draw={null};draw[0]=()->{
+            panel.summary.setText("目前："+(scope.getSelectedItemPosition()==0?month.getText():"全部月份")+" · "+kind.getSelectedItem()+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));
             list.removeAllViews();monthRow.setVisibility(scope.getSelectedItemPosition()==0?View.VISIBLE:View.GONE);LinearLayout previous=body;body=list;
             try {
                 paymentScope=scope.getSelectedItemPosition();paymentKind=kind.getSelectedItemPosition();paymentMonth=month.getText().toString();paymentSearch=search.getText().toString();
@@ -739,15 +764,17 @@ public class MainActivity extends Activity {
         scope.setSelection(paymentScope);kind.setSelection(paymentKind);if(!paymentMonth.isEmpty())month.setText(paymentMonth);search.setText(paymentSearch);
         Runnable reset=()->{limit[0]=20;draw[0].run();};AdapterView.OnItemSelectedListener listener=new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int n,long id){reset.run();}};scope.setOnItemSelectedListener(listener);kind.setOnItemSelectedListener(listener);
         TextWatcher watcher=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){reset.run();}public void afterTextChanged(Editable e){}};month.addTextChangedListener(watcher);search.addTextChangedListener(watcher);
-        draw[0].run();return draw[0];
+        panel.reset.setOnClickListener(v->{scope.setSelection(0);kind.setSelection(0);month.setText(YearMonth.from(today()).toString());search.setText("");reset.run();});draw[0].run();return draw[0];
     }
     private void rentScreen() {
         card("帳單與收款", "先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款。");
         if(data("leases").length()==0){card("尚無租約","請先到不動產建立出租單位與租約。");return;}
-        EditText search=field(body,"搜尋姓名、不動產或代號");search.setText(rentSearch);
-        Spinner filter=choice(body,new String[]{"全部租約","有未繳金額（含未到期）","已有帳單且全部繳清","尚未開帳單"});filter.setSelection(rentFilter);
+        FilterPanel panel=new FilterPanel(body,"rent");
+        EditText search=field(panel.controls,"搜尋姓名、不動產或代號");search.setText(rentSearch);
+        Spinner filter=choice(panel.controls,new String[]{"全部租約","有未繳金額（含未到期）","已有帳單且全部繳清","尚未開帳單"});filter.setSelection(rentFilter);
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
+            panel.summary.setText("目前："+filter.getSelectedItem()+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));
             list.removeAllViews();LinearLayout previous=body;body=list;
             try {
                 JSONArray leases=data("leases"),invoices=data("invoices"),receipts=data("receipts");List<JSONObject> sorted=new ArrayList<>();for(int i=0;i<leases.length();i++)sorted.add(leases.getJSONObject(i));
@@ -765,7 +792,7 @@ public class MainActivity extends Activity {
             }catch(Exception e){error(e);}finally{body=previous;}
         };
         search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){rentSearch=s.toString();refresh.run();}public void afterTextChanged(Editable e){}});
-        filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){rentFilter=n;refresh.run();}public void onNothingSelected(AdapterView<?> p){}});refresh.run();
+        filter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){rentFilter=n;refresh.run();}public void onNothingSelected(AdapterView<?> p){}});panel.reset.setOnClickListener(v->{search.setText("");filter.setSelection(0);rentSearch="";rentFilter=0;refresh.run();});refresh.run();
     }
     private void taskOverview() {
         LinearLayout layout=form();String[] selectedKind={"全部"};
@@ -1132,19 +1159,18 @@ public class MainActivity extends Activity {
         if(data("accounts").length()==0){card("尚未設定帳戶","先建立銀行或現金帳戶，才能記錄支出與轉帳。");primaryAction("＋ 新增帳戶",this::accountForm);return;}
         boolean transferPage=sections[2]==1;listHeader(transferPage?"轉帳紀錄":"支出紀錄",transferPage?"新增轉帳":"新增支出",transferPage?this::transferForm:this::expenseForm);
         View voice=centeredIconAction("語音記帳",R.drawable.action_voice,()->voiceEditor(""));LinearLayout.LayoutParams voiceParams=new LinearLayout.LayoutParams(-1,-2);voiceParams.setMargins(0,0,0,dp(8));body.addView(voice,voiceParams);
-        LinearLayout page=body,filters=new LinearLayout(this);filters.setOrientation(LinearLayout.VERTICAL);filters.setVisibility(expenseFiltersOpen?android.view.View.VISIBLE:android.view.View.GONE);
-        Button filterToggle=styledButton("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"),false,false);filterToggle.setOnClickListener(v->{expenseFiltersOpen=!expenseFiltersOpen;filters.setVisibility(expenseFiltersOpen?View.VISIBLE:View.GONE);filterToggle.setText("搜尋與篩選"+(expenseFiltersOpen?"  ▴":"  ▾"));filterToggle.setContentDescription(expenseFiltersOpen?"搜尋與篩選，已展開":"搜尋與篩選，已收合");});LinearLayout.LayoutParams filterParams=new LinearLayout.LayoutParams(-1,-2);filterParams.setMargins(0,0,0,dp(6));page.addView(filterToggle,filterParams);page.addView(filters,new LinearLayout.LayoutParams(-1,-2));body=filters;
+        LinearLayout page=body;FilterPanel panel=new FilterPanel(page,"bookkeeping");LinearLayout filters=panel.controls;body=filters;
         EditText search=field(body,"搜尋項目、帳戶或不動產");search.setText(expenseSearch);
         Spinner type=choice(body,"紀錄類型",new String[]{"全部紀錄","有效紀錄","已撤銷"});type.setSelection(expenseFilter);
         Spinner scope=choice(body,"月份範圍",new String[]{"全部月份","指定月份"});scope.setSelection(expenseMonth.isEmpty()?0:1);
         EditText month=dateField(body,"紀錄月份",true);month.setText(expenseMonth.isEmpty()?YearMonth.from(today()).toString():expenseMonth);android.view.View monthRow=(android.view.View)month.getParent();monthRow.setVisibility(expenseMonth.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
-        body=page;TextView filterSummary=text("目前："+(expenseMonth.isEmpty()?"全部月份":expenseMonth)+" · "+new String[]{"全部紀錄","有效紀錄","已撤銷"}[expenseFilter]+(expenseSearch.trim().isEmpty()?"":" · 搜尋："+expenseSearch),13,Color.DKGRAY);body.addView(filterSummary);
+        body=page;TextView filterSummary=panel.summary;
         LinearLayout records=new LinearLayout(this);records.setOrientation(LinearLayout.VERTICAL);body.addView(records,new LinearLayout.LayoutParams(-1,-2));
         Runnable draw=()->{filterSummary.setText("目前："+(expenseMonth.isEmpty()?"全部月份":expenseMonth)+" · "+new String[]{"全部紀錄","有效紀錄","已撤銷"}[expenseFilter]+(expenseSearch.trim().isEmpty()?"":" · 搜尋："+expenseSearch));drawExpenseRecords(records);};
         search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){expenseSearch=s.toString();expenseLimit=15;draw.run();}public void afterTextChanged(Editable e){}});
         type.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){expenseFilter=n;expenseLimit=15;draw.run();}});
         scope.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){expenseMonth=n==0?"":month.getText().toString();monthRow.setVisibility(n==0?android.view.View.GONE:android.view.View.VISIBLE);expenseLimit=15;draw.run();}});
-        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){if(scope.getSelectedItemPosition()==1){expenseMonth=s.toString();expenseLimit=15;draw.run();}}public void afterTextChanged(Editable e){}});draw.run();
+        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){if(scope.getSelectedItemPosition()==1){expenseMonth=s.toString();expenseLimit=15;draw.run();}}public void afterTextChanged(Editable e){}});panel.reset.setOnClickListener(v->{search.setText("");type.setSelection(0);scope.setSelection(0);month.setText(YearMonth.from(today()).toString());expenseSearch="";expenseMonth="";expenseFilter=0;expenseLimit=15;draw.run();});draw.run();
     }
     private void drawExpenseRecords(LinearLayout records) {
         LinearLayout previous=body;body=records;records.removeAllViews();try {
@@ -1327,8 +1353,7 @@ public class MainActivity extends Activity {
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(layout);
         android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_Light_NoActionBar);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(Color.rgb(248,244,237));TextView pageTitle=text(original==null?"新增支出":"修改支出",20,Color.rgb(77,57,39));pageTitle.setTypeface(null,Typeface.BOLD);pageTitle.setPadding(dp(16),dp(12),dp(16),dp(10));page.addView(pageTitle,new LinearLayout.LayoutParams(-1,-2));page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));LinearLayout footer=new LinearLayout(this);footer.setPadding(dp(12),dp(6),dp(12),dp(6));footer.setBackgroundColor(Color.rgb(255,252,247));Button cancel=styledButton("取消",false,false),previewButton=styledButton("核對",true,false);LinearLayout.LayoutParams cancelParams=new LinearLayout.LayoutParams(0,-2,1);cancelParams.rightMargin=dp(8);footer.addView(cancel,cancelParams);footer.addView(previewButton,new LinearLayout.LayoutParams(0,-2,1));page.addView(footer,new LinearLayout.LayoutParams(-1,-2));dialog.setContentView(page);cancel.setOnClickListener(v->dialog.dismiss());dialog.setCanceledOnTouchOutside(false);
         Runnable refreshPhotos=()->{photoSection.removeAllViews();photoSection.addView(text("照片憑證 · "+photoNames.size()+" / 3 張",14,Color.DKGRAY));
-            LinearLayout strip=new LinearLayout(this);photoSection.addView(strip,new LinearLayout.LayoutParams(-1,-2));
-            for(String name:new ArrayList<>(photoNames)){android.widget.FrameLayout tile=new android.widget.FrameLayout(this);LinearLayout.LayoutParams tileParams=new LinearLayout.LayoutParams(dp(88),dp(80));tileParams.rightMargin=dp(8);strip.addView(tile,tileParams);ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),8));image.setClipToOutline(true);tile.addView(image,new android.widget.FrameLayout.LayoutParams(-1,-1));loadExpenseThumbnail(image,name);image.setContentDescription("查看照片憑證");image.setOnClickListener(v->viewMeterPhoto(name));Button remove=styledButton("×",false,false);remove.setTextSize(22);remove.setMinWidth(0);remove.setMinimumWidth(0);remove.setPadding(0,0,0,0);remove.setContentDescription("移除此張照片");remove.setBackground(surface(Color.argb(235,255,252,247),20));android.widget.FrameLayout.LayoutParams removeParams=new android.widget.FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END);tile.addView(remove,removeParams);remove.setOnClickListener(v->{photoNames.remove(name);((Runnable)photoSection.getTag()).run();});}
+            int photoNumber=0;for(String name:new ArrayList<>(photoNames)){photoNumber++;photoAttachmentRow(photoSection,"照片憑證 "+photoNumber,name,()->{photoNames.remove(name);((Runnable)photoSection.getTag()).run();});}
             if(photoNames.size()<3){Button add=styledButton("＋ 拍照／選相簿",false,false);add.setTextSize(13);photoSection.addView(add,new LinearLayout.LayoutParams(-1,dp(48)));add.setOnClickListener(v->{try{JSONObject snapshot=new JSONObject().put("date",date.getText().toString()).put("raw",description.getText().toString()).put("amount",total.getText().toString()).put("accountId",accounts.get(account.getSelectedItemPosition()).optString("id")).put("category",category.getSelectedItemPosition()==0?"":categoryRows.get(category.getSelectedItemPosition()-1).optString("id")).put("propertyIds",new JSONArray()).put("photos",new JSONArray(photoNames)).put("ownedPhotos",new JSONArray(ownedPhotos));JSONArray values=new JSONArray();for(int i=0;i<fields.size();i++)values.put(new JSONObject().put("propertyId",properties.optJSONObject(i).optString("id")).put("amount",fields.get(i).getText().toString()));snapshot.put("splits",values);pickExpensePhoto(snapshot,original,dialog,handedOff);}catch(Exception e){error(e);}});}
         };photoSection.setTag(refreshPhotos);refreshPhotos.run();
         guardForm(dialog,layout,()->photoNames.toString(),cancel);
@@ -1572,7 +1597,7 @@ public class MainActivity extends Activity {
         image.setContentDescription("照片縮圖，點擊查看");expenseImages.execute(()->{try{File file=new File(photoDir(),name);android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();opts.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(opts.outWidth<=0||opts.outHeight<=0)throw new IOException();opts.inJustDecodeBounds=false;opts.inSampleSize=1;while(Math.max(opts.outWidth,opts.outHeight)/opts.inSampleSize>256)opts.inSampleSize*=2;android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(file.getPath(),opts);if(bitmap==null)throw new IOException();runOnUiThread(()->{if(isDestroyed()){bitmap.recycle();return;}image.setImageBitmap(bitmap);});}catch(Exception e){runOnUiThread(()->image.setContentDescription("照片無法載入，請查看完整備份"));}});
     }
     private void expensePhotoGallery(JSONObject row){
-        try{JSONArray photos=ExpensePhotos.photos(row);LinearLayout layout=form();layout.addView(text("共 "+photos.length()+" 張照片；點擊可開啟原圖",14,Color.DKGRAY));for(int i=0;i<photos.length();i++){String name=photos.getString(i);ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);layout.addView(image,new LinearLayout.LayoutParams(-1,dp(220)));loadExpenseThumbnail(image,name);image.setOnClickListener(v->viewMeterPhoto(name));}ScrollView scroll=new ScrollView(this);scroll.addView(layout);new AlertDialog.Builder(this).setTitle("支出照片憑證").setView(scroll).setPositiveButton("關閉",null).show();}catch(Exception e){error(e);}
+        try{JSONArray photos=ExpensePhotos.photos(row);LinearLayout layout=form();layout.addView(text("共 "+photos.length()+" 張照片；點縮圖查看原圖",14,Color.DKGRAY));for(int i=0;i<photos.length();i++)photoAttachmentRow(layout,"照片憑證 "+(i+1),photos.getString(i),null);showPanel("支出照片憑證",layout);}catch(Exception e){error(e);}
     }
     private void pickExpensePhoto(JSONObject draft,JSONObject original,android.app.Dialog source,boolean[] handedOff){
         new AlertDialog.Builder(this).setTitle("照片來源").setItems(new String[]{"開啟相機拍照","從相簿／檔案選取"},(d,n)->{String name="exp-"+UUID.randomUUID()+".jpg";try{
@@ -1602,6 +1627,8 @@ public class MainActivity extends Activity {
         layout.removeAllViews();
         for(boolean isPdf:new boolean[]{false,true}){
             String file=editor.attachments.optString(isPdf?"pdf":"photo");
+            if(!isPdf&&!file.isEmpty()){photoAttachmentRow(layout,"起始電表照片",file,()->{try{if(leaseAttachmentPending())return;LeaseAttachments.remove(editor.attachments,false);editor.refresh.run();}catch(Exception e){error(e);}},()->new AlertDialog.Builder(this).setTitle("起始電表照片").setItems(new String[]{"拍照","從相簿選取"},(d,n)->pickLeaseAttachment(editor,n==0?CAMERA_LEASE_ATTACHMENT:PICK_LEASE_PHOTO)).setNegativeButton("取消",null).show());continue;}
+
             LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(6),0,dp(6));layout.addView(row,new LinearLayout.LayoutParams(-1,-2));
             if(!isPdf&&!file.isEmpty()){
                 ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(surface(Color.rgb(239,237,233),8));image.setClipToOutline(true);image.setContentDescription("查看起始電表照片");row.addView(image,new LinearLayout.LayoutParams(dp(64),dp(64)));loadExpenseThumbnail(image,file);image.setOnClickListener(v->viewMeterPhoto(file));
@@ -1686,7 +1713,7 @@ public class MainActivity extends Activity {
             action("＋ 新增抄表紀錄",()->meterForm(lease));JSONArray rows=data("meterReadings");for(int i=rows.length()-1;i>=0;i--){JSONObject r=rows.getJSONObject(i);if(!lease.optString("id").equals(r.optString("leaseId")))continue;
                 LinearLayout meterBox=card(r.getString("month")+" · 抄表日 "+r.getString("date"),"電表 "+fmt(r.getLong("previous"))+" → "+fmt(r.getLong("current"))+" · 用量 "+fmt(r.getLong("current")-r.getLong("previous"))+" 度\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷錯誤紀錄":""));
                 if(r.getBoolean("void"))markVoided(meterBox);
-                if(!r.getString("file").isEmpty())cardAction(meterBox,"照片",()->viewMeterPhoto(r.optString("file")));
+                if(!r.getString("file").isEmpty())photoAttachmentRow(meterBox,"電表照片",r.getString("file"),null);
                 if(!r.getBoolean("void"))recordAction(meterBox,"撤銷",()->new AlertDialog.Builder(this).setTitle("撤銷抄表紀錄？").setMessage("已開帳單不會改動；撤銷後不再帶入新帳單。").setNegativeButton("取消",null).setPositiveButton("確認撤銷",(d,w)->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}}).show());
             }
         }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("抄電表／照片",layout,refresh);
