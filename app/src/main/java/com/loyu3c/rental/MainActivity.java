@@ -591,6 +591,11 @@ public class MainActivity extends Activity {
         catch(java.time.format.DateTimeParseException e){throw fieldError(input,name+"格式不正確，請點選日曆重新選擇");}
         input.setError(null);return value;
     }
+    private long previewAmount(EditText field,boolean optional){
+        String raw=field.getText().toString().trim().replace(",","");
+        if(raw.isEmpty()){if(optional)return -1;throw new IllegalArgumentException("尚未填完");}
+        long result=Long.parseLong(raw);if(result<0||result>1000000000L)throw new IllegalArgumentException("金額超出範圍");return result;
+    }
     private long amount(EditText field, boolean optional) {
         String value=field.getText().toString().trim().replace(",", "");String name=inputName(field);
         if(value.isEmpty()){if(optional){field.setError(null);return -1;}throw fieldError(field,"請填寫"+name);}
@@ -901,7 +906,7 @@ public class MainActivity extends Activity {
                 YearMonth ym=YearMonth.parse(dateValue(month));JSONArray invoices=data("invoices");
                 JSONObject existingRent=Ledger.forMonth(invoices,lease.optString("id"),RentTerms.rentMonth(lease,ym),"租金"),existingUtility=Ledger.forMonth(invoices,lease.optString("id"),ym,"水電");
                 boolean collect=lease.optString("utilities").equals("管理者代收水電"),needUtility=collect&&existingUtility==null;
-                JSONObject plan=Ledger.monthlyPlan(lease,ym,existingRent==null?amount(rent,false):0,needUtility?amount(water,true):0,needUtility?amount(prior,false):0,needUtility?amount(current,false):0,invoices,data("receipts"));
+                JSONObject plan=Ledger.monthlyPlan(lease,ym,existingRent==null?previewAmount(rent,false):0,needUtility?previewAmount(water,true):0,needUtility?previewAmount(prior,false):0,needUtility?previewAmount(current,false):0,invoices,data("receipts"));
                 JSONObject r=plan.getJSONObject("rent"),u=plan.optJSONObject("utility");
                 summary.setText("租金 $"+r.getLong("rent")+(u==null?"\n水電：租客自行繳納":"\n水費 $"+u.getLong("water")+" · 電費 $"+u.getLong("electricity"))
                     +"\n本期租金＋本月水電合計 $"+plan.getLong("total")+"\n已分配收款 $"+plan.getLong("paid")+"\n本期帳單尚需繳付 $"+plan.getLong("remaining"));
@@ -1309,7 +1314,7 @@ public class MainActivity extends Activity {
         List<EditText> fields=new ArrayList<>();for(int i=0;i<properties.length();i++){EditText input=labeledNumber(splitSection,properties.optJSONObject(i).optString("name"));polishExpenseInput(input);fields.add(input);}
         if(draft!=null){date.setText(draft.optString("date"));setDraftAmount(total,draft);description.setText(draft.optString("raw"));selectDraftAccount(account,accounts,draft.optString("accountId"));for(int c=0;c<categoryRows.size();c++)if(categoryRows.get(c).optString("id").equals(draft.optString("category")))category.setSelection(c+1);try{JSONArray splits=draft.getJSONArray("splits"),ids=draft.getJSONArray("propertyIds");for(int i=0;i<fields.size();i++){String id=properties.optJSONObject(i).optString("id");for(int j=0;j<splits.length();j++)if(splits.getJSONObject(j).getString("propertyId").equals(id))fields.get(i).setText(splits.getJSONObject(j).optString("amount"));if(splits.length()==0&&ids.length()==1&&ids.getString(0).equals(id)&&!draft.isNull("amount"))fields.get(i).setText(draft.optString("amount"));}}catch(Exception e){error(e);}}
         TextView sumLabel=text("分攤合計：待輸入",16,Color.rgb(90,61,37));splitSection.addView(sumLabel);
-        TextWatcher watch=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){try{long sum=0;for(EditText f:fields){long n=amount(f,true);if(n>0)sum+=n;}long paid=amount(total,true);sumLabel.setText("分攤合計 $"+sum+(paid<0?"":" · 差額 $"+(paid-sum)));}catch(Exception e){sumLabel.setText("金額格式不正確");}}public void afterTextChanged(Editable e){}};
+        TextWatcher watch=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){try{long sum=0;for(EditText f:fields){long n=previewAmount(f,true);if(n>0)sum+=n;}long paid=previewAmount(total,true);sumLabel.setText("分攤合計 $"+sum+(paid<0?"":" · 差額 $"+(paid-sum)));}catch(Exception e){sumLabel.setText("金額格式不正確");}}public void afterTextChanged(Editable e){}};
         total.addTextChangedListener(watch);for(EditText f:fields)f.addTextChangedListener(watch);watch.onTextChanged("",0,0,0);
         Button equal=styledButton("均分",false,false);equal.setTextSize(13);equal.setMinWidth(0);equal.setMinimumWidth(0);equal.setPadding(dp(10),dp(8),dp(10),dp(8));equal.setContentDescription("將總付款金額均分至下方全部不動產");
         LinearLayout totalRow=(LinearLayout)total.getParent();LinearLayout.LayoutParams equalParams=new LinearLayout.LayoutParams(-2,-2);equalParams.leftMargin=dp(6);totalRow.addView(equal,equalParams);
