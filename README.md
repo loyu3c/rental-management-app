@@ -12,6 +12,7 @@ Google 房東月報手動同步已實作，但需在自己的帳號完成服務�
 - [支出與資金規格及驗收](docs/changes/expenses-cashflow.md)
 - [已確認需求](docs/requirements.md)
 - [規格驅動開發流程](docs/development-process.md)
+- [UI 與功能架構開發規範（後續開發必讀）](docs/ui-architecture-guidelines.md)
 
 ## 下載與驗證
 

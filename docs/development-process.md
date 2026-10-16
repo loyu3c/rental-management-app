@@ -4,7 +4,7 @@
 
 ## 正式規格
 
-requirements.md、tenancy-and-parking.md記錄業務規則；mobile-design.md為畫面與模型草案。變更以最新明確使用者決定為準，衝突時先更新規格。
+requirements.md、tenancy-and-parking.md記錄業務規則；mobile-design.md為畫面與模型草案；[UI 與功能架構開發規範](ui-architecture-guidelines.md)為後續畫面與互動的必遵循基準（2026-10-17 確認），舊版配置若衝突以此規範為準。變更以最新明確使用者決定為準，衝突時先更新規格。
 
 ## 每項變更
 
@@ -16,6 +16,10 @@ requirements.md、tenancy-and-parking.md記錄業務規則；mobile-design.md為
 5. 已知限制、完成狀態與對應commit。
 
 流程：規格→任務→coding→review→驗收→更新完成紀錄。一般實作選擇由開發者決定；需要改變業務行為或由使用者選擇的視覺方案先討論。並非每個commit都要求使用者批准。
+
+## UI 變更必讀與檢查
+
+新增功能或調整畫面前，先讀 [UI 與功能架構開發規範](ui-architecture-guidelines.md)，在變更文件標明入口、頁籤、按鈕、返回行為與遷移狀態，交付前逐項完成該文件的驗收檢查。既有不一致畫面逐步遷移，不能繼續沿用為新功能的範本。一般符合規範的實作不需重複詢問；需要偏離時記錄原因並先討論。純文件變更核對內容與連結即可，不要求產出 APK。
 
 ## Review檢查
 
