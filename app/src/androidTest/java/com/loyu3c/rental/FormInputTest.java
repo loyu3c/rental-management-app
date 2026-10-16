@@ -71,7 +71,9 @@ public class FormInputTest {
         do{for(AccessibilityWindowInfo window:instrumentation.getUiAutomation().getWindows())if(window.getType()==AccessibilityWindowInfo.TYPE_INPUT_METHOD)keyboard=true;if(keyboard)break;SystemClock.sleep(100);}while(SystemClock.uptimeMillis()<until);
         assertTrue("Tapping "+hint+" must show the soft keyboard",keyboard);
         instrumentation.sendStringSync("123");instrumentation.waitForIdleSync();
-        assertTrue("Actual typed characters must reach the field",field.refresh()&&String.valueOf(field.getText()).contains("123"));
+        until=SystemClock.uptimeMillis()+8000;String actual="<stale>";
+        do{if(field.refresh())actual=String.valueOf(field.getText());if(actual.contains("123"))break;SystemClock.sleep(100);}while(SystemClock.uptimeMillis()<until);
+        assertTrue("Actual typed characters must reach "+hint+"; observed="+actual,actual.contains("123"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
     }
 
