@@ -128,7 +128,9 @@ public class FormInputTest {
             awaitLabel("照片大圖",false);
             assertEquals(context.getPackageName(),String.valueOf(instrumentation.getUiAutomation().getRootInActiveWindow().getPackageName()));
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();
-            assertEquals(context.getPackageName(),String.valueOf(instrumentation.getUiAutomation().getRootInActiveWindow().getPackageName()));
+            AccessibilityNodeInfo source=awaitLabel("暖色帳本",false);
+            assertEquals(context.getPackageName(),String.valueOf(source.getPackageName()));
+            assertNull(labelled(instrumentation.getUiAutomation().getRootInActiveWindow(),"照片大圖",false));
         }finally{file.delete();}
     }
 
