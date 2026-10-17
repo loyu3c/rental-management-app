@@ -12,11 +12,11 @@ public class OccupancyTest {
         assertArrayEquals(new int[]{1,3},Occupancy.counts(units,leases,null,today));assertArrayEquals(new int[]{1,2},Occupancy.counts(units,leases,"P",today));assertArrayEquals(new int[]{0,0},Occupancy.counts(units,leases,"empty",today));
         assertEquals("待起租",Occupancy.status(units,leases,units.getJSONObject(1),today));assertEquals("租約已到期",Occupancy.status(units,leases,units.getJSONObject(2),today));assertEquals("未建租約",Occupancy.status(units,leases,units.getJSONObject(3),today));assertEquals(before,leases.toString());
     }
-    @Test public void wholeBuildingCoversRoomsButNotIndependentParkingOrLand() throws Exception{
+    @Test public void wholeBuildingDoesNotInferOtherUnitsOccupancy() throws Exception{
         JSONArray units=new JSONArray().put(u("whole","P","整棟")).put(u("room","P","房間")).put(u("car","P","車格")).put(u("land","P","土地出租範圍")).put(u("other","Q","房間"));
         JSONArray leases=new JSONArray().put(l("whole","2026-01-01","2027-01-01"));LocalDate today=LocalDate.of(2026,10,5);
-        assertEquals("出租中（整棟租約）",Occupancy.status(units,leases,units.getJSONObject(1),today));assertArrayEquals(new int[]{2,3},Occupancy.counts(units,leases,null,today));
-        leases.put(l("car","2026-01-01","2027-01-01"));assertArrayEquals(new int[]{3,2},Occupancy.counts(units,leases,null,today));
+        assertEquals("未建租約",Occupancy.status(units,leases,units.getJSONObject(1),today));assertArrayEquals(new int[]{1,4},Occupancy.counts(units,leases,null,today));
+        leases.put(l("car","2026-01-01","2027-01-01"));assertArrayEquals(new int[]{2,3},Occupancy.counts(units,leases,null,today));
     }
     @Test public void effectiveEndAndTenantChangeStayConsistent() throws Exception{
         JSONArray units=new JSONArray().put(u("room","P","房間"));JSONArray leases=new JSONArray().put(l("room","2026-01-01","2027-01-01").put("terminatedOn","2026-10-04")).put(l("room","2026-10-06","2027-10-06").put("tenant","新租客"));
@@ -25,3 +25,4 @@ public class OccupancyTest {
         assertArrayEquals(new int[]{1,0},Occupancy.counts(units,leases,null,LocalDate.of(2027,10,6)));assertArrayEquals(new int[]{0,1},Occupancy.counts(units,leases,null,LocalDate.of(2027,10,7)));
     }
 }
+

@@ -693,9 +693,7 @@ public class MainActivity extends Activity {
                 for (int j = 0; j < units.length(); j++) if (units.optJSONObject(j).optString("id").equals(old.optString("unitId")))
                     oldUnit = units.optJSONObject(j);
                 boolean same = unit.optString("id").equals(old.optString("unitId"));
-                boolean whole = oldUnit != null && unit.optString("propertyId").equals(oldUnit.optString("propertyId"))
-                    && (unit.optString("type").equals("整棟") || oldUnit.optString("type").equals("整棟"));
-                if ((same || whole) && !to.isBefore(LocalDate.parse(old.optString("start"))) && !from.isAfter(LocalDate.parse(old.optString("terminatedOn",old.optString("end"))))) {
+                if (same && !to.isBefore(LocalDate.parse(old.optString("start"))) && !from.isAfter(LocalDate.parse(old.optString("terminatedOn",old.optString("end"))))) {
                     end.setError("租期與既有租約重疊"); return;
                 }
             }
@@ -1832,7 +1830,7 @@ public class MainActivity extends Activity {
             JSONObject unit=null;for(int k=0;k<u.length();k++)if(u.getJSONObject(k).getString("id").equals(lease.getString("unitId")))unit=u.getJSONObject(k);
             for(int j=i+1;j<l.length();j++) {
                 JSONObject other=l.getJSONObject(j),otherUnit=null;for(int k=0;k<u.length();k++)if(u.getJSONObject(k).getString("id").equals(other.getString("unitId")))otherUnit=u.getJSONObject(k);
-                boolean conflict=lease.getString("unitId").equals(other.getString("unitId")) || (unit!=null&&otherUnit!=null&&unit.getString("propertyId").equals(otherUnit.getString("propertyId"))&&(unit.getString("type").equals("整棟")||otherUnit.getString("type").equals("整棟")));
+                boolean conflict=lease.getString("unitId").equals(other.getString("unitId"));
                 if(conflict&&Settlements.overlaps(lease,other))throw new IllegalArgumentException("備份租約重疊");
             }
         }
