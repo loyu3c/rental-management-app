@@ -474,12 +474,11 @@ public class MainActivity extends Activity {
         if(unit!=null&&unit.optString("propertyId").equals(propertyId)) { unitScreen(property,unit);return; }
         unitId="";LinearLayout propertyOverview=card(property.optString("name"),property.optString("type")+" · 全部出租單位");occupancySummary(propertyOverview,propertyId);
         recordAction(propertyOverview,"修改不動產名稱",()->editName("properties",property,"name","不動產名稱"));
-        if(property.optString("type").equals("建築物"))recordAction(propertyOverview,"切換整棟／分房出租",()->rentalMode(property));
         listHeader("出租單位","新增單位",()->addUnit(property.optString("id"),property.optString("name")));
         String listProperty=propertyId;FilterPanel panel=new FilterPanel(body,"units:"+listProperty);
         EditText search=field(panel.controls,"搜尋代號或租客姓名");search.setText(propertySearches.getOrDefault(listProperty,""));
         Spinner filter=choice(panel.controls,"出租狀態",new String[]{"啟用出租","全部（含停用）","停用出租","出租中","未出租","待起租","租約已到期","未建租約"});
-        Spinner sort=choice(panel.controls,new String[]{"代號由小到大","代號由大到小"});filter.setSelection(propertyFilters.getOrDefault(listProperty,0));sort.setSelection(propertySorts.getOrDefault(listProperty,0));
+        Spinner sort=choice(panel.controls,new String[]{"代號由小到大","代號由大到小"});filter.setSelection(propertyFilters.getOrDefault(listProperty,1));sort.setSelection(propertySorts.getOrDefault(listProperty,0));
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
             propertySearches.put(listProperty,search.getText().toString());propertyFilters.put(listProperty,filter.getSelectedItemPosition());propertySorts.put(listProperty,sort.getSelectedItemPosition());
@@ -495,7 +494,7 @@ public class MainActivity extends Activity {
         };
         search.addTextChangedListener(new TextWatcher(){ public void beforeTextChanged(CharSequence s,int st,int c,int a){} public void onTextChanged(CharSequence s,int st,int b,int c){refresh.run();}public void afterTextChanged(Editable e){} });
         AdapterView.OnItemSelectedListener listener=new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,android.view.View v,int n,long id){refresh.run();}public void onNothingSelected(AdapterView<?> p){}};
-        filter.setOnItemSelectedListener(listener);sort.setOnItemSelectedListener(listener);panel.reset.setOnClickListener(v->{search.setText("");filter.setSelection(0);sort.setSelection(0);refresh.run();});refresh.run();
+        filter.setOnItemSelectedListener(listener);sort.setOnItemSelectedListener(listener);panel.reset.setOnClickListener(v->{search.setText("");filter.setSelection(1);sort.setSelection(0);refresh.run();});refresh.run();
     }
     private void unitScreen(JSONObject property,JSONObject unit) {
         LinearLayout unitBox=card(unit.optString("code"),unit.optString("type")+" · "+status(unit)+"\n"+tenantLabel(unit));
@@ -512,9 +511,6 @@ public class MainActivity extends Activity {
 
     private void toggleRentalUnit(JSONObject unit){
         boolean enabled=!RentalUnits.enabled(unit);new AlertDialog.Builder(this).setMessage((enabled?"啟用":"停用")+unit.optString("code")+"？停用不列入出租／空房統計，歷史帳務保留。").setNegativeButton("取消",null).setPositiveButton("確認",(d,w)->{try{JSONArray next=RentalUnits.setEnabled(data("units"),data("leases"),unit.optString("id"),enabled,today());if(saveChecked("units",next))render();}catch(Exception e){error(e);}}).show();
-    }
-    private void rentalMode(JSONObject property){
-        new AlertDialog.Builder(this).setTitle("切換出租方式").setItems(new String[]{"整棟出租：啟用整棟、停用房間","分房出租：停用整棟、啟用房間"},(d,n)->{try{JSONArray next=RentalUnits.switchMode(data("units"),data("leases"),property.optString("id"),n==0,today());new AlertDialog.Builder(this).setMessage("切換為"+(n==0?"整棟":"分房")+"出租？車格與土地出租範圍維持原設定，歷史租約與帳務保留。").setNegativeButton("取消",null).setPositiveButton("確認切換",(c,w)->{try{JSONArray checked=RentalUnits.switchMode(data("units"),data("leases"),property.optString("id"),n==0,today());if(saveChecked("units",checked))render();}catch(Exception e){error(e);}}).show();}catch(Exception e){error(e);}}).show();
     }
     private void addProperty() {
         LinearLayout layout = form();
@@ -553,7 +549,7 @@ public class MainActivity extends Activity {
             }
             try {
                 JSONObject item = new JSONObject(); item.put("id", UUID.randomUUID().toString());
-                item.put("propertyId", propertyId); item.put("code", value); item.put("type", type.getSelectedItem().toString());boolean enabled=true;for(int k=0;k<items.length();k++){JSONObject other=items.optJSONObject(k);if(propertyId.equals(other.optString("propertyId"))&&RentalUnits.enabled(other)&&((item.optString("type").equals("整棟")&&RentalUnits.room(other))||(RentalUnits.room(item)&&other.optString("type").equals("整棟"))))enabled=false;}item.put("enabled",enabled);
+                item.put("propertyId", propertyId); item.put("code", value); item.put("type", type.getSelectedItem().toString());item.put("enabled",true);
                 items.put(item); if (save("units", items)) { dialog.dismiss(); render(); }
             } catch (JSONException e) { Toast.makeText(this, "資料格式錯誤", Toast.LENGTH_LONG).show(); }
         }));
@@ -1719,7 +1715,16 @@ public class MainActivity extends Activity {
         }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("抄電表／照片",layout,refresh);
     }
     private void viewMeterPhoto(String name) {
-        try{File f=new File(photoDir(),name);if(!f.isFile())throw new IOException("照片缺少，請從完整ZIP備份還原");Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(name),getContentResolver().getType(photoUri(name))).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(view);}catch(Exception e){error(new IllegalArgumentException("無法開啟照片，請確認有圖片檢視程式及照片檔案"));}
+        try{
+            File file=new File(photoDir(),name);if(!file.isFile())throw new IOException("照片缺少，請從完整 ZIP 備份還原");
+            PhotoViewerView photo=new PhotoViewerView(this,file);
+            android.app.Dialog dialog=new android.app.Dialog(this);dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+            LinearLayout page=form();page.setPadding(dp(16),dp(12),dp(16),dp(12));page.setBackgroundColor(Color.rgb(248,244,237));
+            LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);Button back=iconButton(R.drawable.action_back,"返回照片列表");back.setOnClickListener(v->dialog.dismiss());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            TextView title=text("查看照片",20,Color.rgb(83,60,40));title.setTypeface(null,Typeface.BOLD);toolbar.addView(title,headerTitleParams());page.addView(toolbar);
+            page.addView(text("雙指縮放・放大後拖曳・雙點還原或放大",13,Color.DKGRAY));page.addView(photo,new LinearLayout.LayoutParams(-1,0,1));
+            dialog.setContentView(page);dialog.setOnDismissListener(d->photo.release());dialog.show();if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(248,244,237)));dialog.getWindow().setLayout(-1,-1);}
+        }catch(Exception e){error(e);}
     }
     private void meterForm(JSONObject lease) {
         LinearLayout layout=form();EditText month=dateField(layout,"用電帳單月份",true),date=dateField(layout,"實際抄表日期",false),prior=number(layout,"上期／起始電表讀數"),current=number(layout,"本期電表讀數"),note=field(layout,"抄表備註");month.setText(YearMonth.from(today()).toString());
@@ -1744,7 +1749,7 @@ public class MainActivity extends Activity {
     }
     private void confirmMeterPhoto(JSONObject row,AlertDialog source) {
         try{LinearLayout layout=form();layout.addView(text(row.getString("month")+" · "+row.getString("date")+"\n電表 "+fmt(row.getLong("previous"))+" → "+fmt(row.getLong("current"))+"\n"+row.getString("note")+"\n確認只保存抄表紀錄；不直接開帳單。",16,Color.DKGRAY));
-            String file=row.getString("file");if(!file.isEmpty()){ImageView preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setImageBitmap(photoPreview(new File(photoDir(),file)));layout.addView(preview,new LinearLayout.LayoutParams(-1,dp(220)));preview.setOnClickListener(v->viewMeterPhoto(file));layout.addView(text("點照片可用圖片程式查看原圖；請核對讀數清楚。",14,Color.DKGRAY));}
+            String file=row.getString("file");if(!file.isEmpty()){ImageView preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setImageBitmap(photoPreview(new File(photoDir(),file)));layout.addView(preview,new LinearLayout.LayoutParams(-1,dp(220)));preview.setOnClickListener(v->viewMeterPhoto(file));layout.addView(text("點照片可在 App 內放大查看；請核對讀數清楚。",14,Color.DKGRAY));}
             ScrollView scroll=new ScrollView(this);scroll.addView(layout);boolean[] saved={false};AlertDialog confirm=fullForm("確認抄表與照片",scroll,"儲存");confirm.setOnDismissListener(d->{if(!saved[0]&&!file.isEmpty())new File(photoDir(),file).delete();getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();});
             confirm.setOnShowListener(v->confirm.getButton(-1).setOnClickListener(w->{try{JSONArray next=data("meterReadings");for(int i=0;i<next.length();i++)if(next.getJSONObject(i).getString("id").equals(row.getString("id")))return;next.put(row);if(saveChecked("meterReadings",next)){saved[0]=true;confirm.dismiss();if(source!=null)source.dismiss();render();Toast.makeText(this,"抄表紀錄已保存，可開帳單帶入讀數",Toast.LENGTH_LONG).show();}}catch(Exception e){error(e);}}));confirm.show();
         }catch(Exception e){getSharedPreferences("workflow",MODE_PRIVATE).edit().remove("pendingMeter").commit();try{if(!row.getString("file").isEmpty())new File(photoDir(),row.getString("file")).delete();}catch(Exception ignored){}error(e);}

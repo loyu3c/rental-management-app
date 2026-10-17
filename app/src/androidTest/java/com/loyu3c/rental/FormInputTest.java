@@ -117,4 +117,19 @@ public class FormInputTest {
         awaitLabel("Repair check",false);
         assertEquals(records,context.getSharedPreferences("catalog",0).getString("expenses",null));
     }
+    @Test public void photoOpensInsideAppAndBackReturnsToSource() throws Exception {
+        Context context=instrumentation.getTargetContext();
+        Method photoDir=MainActivity.class.getDeclaredMethod("photoDir");photoDir.setAccessible(true);
+        java.io.File dir=(java.io.File)photoDir.invoke(activity);dir.mkdirs();java.io.File file=new java.io.File(dir,"viewer-test.jpg");
+        android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(64,96,android.graphics.Bitmap.Config.ARGB_8888);
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,90,out);}finally{bitmap.recycle();}
+        try{
+            open("viewMeterPhoto",new Class<?>[]{String.class},file.getName());
+            awaitLabel("照片大圖",false);
+            assertEquals(context.getPackageName(),String.valueOf(instrumentation.getUiAutomation().getRootInActiveWindow().getPackageName()));
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();
+            assertEquals(context.getPackageName(),String.valueOf(instrumentation.getUiAutomation().getRootInActiveWindow().getPackageName()));
+        }finally{file.delete();}
+    }
+
 }
