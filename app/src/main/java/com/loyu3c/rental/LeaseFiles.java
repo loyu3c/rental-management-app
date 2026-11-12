@@ -7,7 +7,7 @@ import java.util.*;
 public final class LeaseFiles {
     public static boolean pdfName(String name){return name.matches("[0-9a-fA-F-]{36}\\.pdf");}
     public static Set<String> files(JSONObject backup) throws JSONException {
-        Set<String> names=new LinkedHashSet<>();JSONArray leases=backup.optJSONArray("leases");if(leases==null)return names;
+        Set<String> names=new LinkedHashSet<>();JSONArray leases=VoidRecords.allLeases(backup);if(leases==null)return names;
         for(int i=0;i<leases.length();i++){String name=leases.getJSONObject(i).optString("contractFile");if(!name.isEmpty()){if(!pdfName(name))throw new IllegalArgumentException("合約檔名無效");names.add(name);}}return names;
     }
     public static void validatePdf(File file) throws IOException {
@@ -19,6 +19,6 @@ public final class LeaseFiles {
         try{return YearMonth.parse(month).equals(YearMonth.from(java.time.LocalDate.parse(lease.getString("start"))))?Long.toString(lease.getLong("initialMeter")):"";}catch(Exception e){return "";}
     }
     public static void validate(JSONObject backup) throws JSONException {
-        files(backup);JSONArray leases=backup.getJSONArray("leases");for(int i=0;i<leases.length();i++){JSONObject lease=leases.getJSONObject(i);if(lease.has("initialMeter")&&!lease.isNull("initialMeter"))Ledger.money(lease,"initialMeter");}
+        files(backup);JSONArray leases=VoidRecords.allLeases(backup);for(int i=0;i<leases.length();i++){JSONObject lease=leases.getJSONObject(i);if(lease.has("initialMeter")&&!lease.isNull("initialMeter"))Ledger.money(lease,"initialMeter");}
     }
 }

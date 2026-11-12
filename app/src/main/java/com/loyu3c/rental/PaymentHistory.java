@@ -23,14 +23,15 @@ public final class PaymentHistory {
         if(!month.isEmpty())YearMonth.parse(month);
         List<JSONObject> all=new ArrayList<>();JSONArray receipts=rows(backup,"receipts"),deposits=rows(backup,"deposits"),settlements=rows(backup,"settlements");
         for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.optBoolean("cash",true)&&!r.optBoolean("void"))all.add(event(backup,r,r.getString("leaseId"),"租金水電","",""));}
+        for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);JSONArray refunds=RentCredits.refunds(r);for(int j=0;j<refunds.length();j++){JSONObject refund=refunds.getJSONObject(j);if(!refund.optBoolean("void"))all.add(event(backup,refund,r.getString("leaseId"),"預收租金退款","",""));}}
         for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);String k=r.getString("kind");if(!r.optBoolean("void")&&(k.equals("收到押金")||k.equals("退還押金")))all.add(event(backup,r,r.getString("leaseId"),k,r.optString("tenantSnapshot"),r.optString("unitCodeSnapshot")));}
         for(int i=0;i<settlements.length();i++){JSONObject s=settlements.getJSONObject(i);JSONArray ps=s.getJSONArray("payments");for(int j=0;j<ps.length();j++)all.add(event(backup,ps.getJSONObject(j),s.getString("leaseId"),"結算補繳",s.optString("tenantSnapshot"),s.optString("unitCodeSnapshot")));}
         all.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed().thenComparing(r->r.optString("id")));
-        String term=search.trim().toLowerCase(Locale.ROOT);JSONArray result=new JSONArray();long rent=0,received=0,refunded=0,topups=0;
+        String term=search.trim().toLowerCase(Locale.ROOT);JSONArray result=new JSONArray();long rent=0,received=0,refunded=0,topups=0,rentRefunded=0;
         for(JSONObject r:all){String k=r.getString("kind"),haystack=r.getString("date")+" "+r.getString("tenant")+" "+r.getString("code")+" "+r.getString("account")+" "+r.getString("note")+" "+r.getLong("amount")+" "+DisplayText.number(r.getLong("amount"));
             if(!month.isEmpty()&&!r.getString("date").startsWith(month+"-")||!kind.equals("全部")&&!kind.equals(k)||!haystack.toLowerCase(Locale.ROOT).contains(term))continue;
-            result.put(r);long amount=r.getLong("amount");switch(k){case "租金水電":rent+=amount;break;case "收到押金":received+=amount;break;case "退還押金":refunded+=amount;break;case "結算補繳":topups+=amount;break;}
+            result.put(r);long amount=r.getLong("amount");switch(k){case "租金水電":rent+=amount;break;case "收到押金":received+=amount;break;case "退還押金":refunded+=amount;break;case "預收租金退款":rentRefunded+=amount;break;case "結算補繳":topups+=amount;break;}
         }
-        return new JSONObject().put("rows",result).put("rent",rent).put("depositReceived",received).put("depositRefunded",refunded).put("topups",topups).put("net",rent+received+topups-refunded);
+        return new JSONObject().put("rows",result).put("rent",rent).put("depositReceived",received).put("depositRefunded",refunded).put("topups",topups).put("rentRefunded",rentRefunded).put("net",rent+received+topups-refunded-rentRefunded);
     }
 }

@@ -43,6 +43,7 @@ public final class Bookkeeping {
         if(LocalDate.parse(date).isBefore(LocalDate.parse(start)))throw new IllegalArgumentException("對帳日早於帳戶起算日，無法計算餘額");
         long n=Ledger.money(account,"opening");
         for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(r.optBoolean("cash",true)&&id.equals(r.optString("accountId"))&&inRange(r,start,date))n=Math.addExact(n,Ledger.money(r,"amount"));}
+        for(int i=0;i<receipts.length();i++){JSONArray refunds=RentCredits.refunds(receipts.getJSONObject(i));for(int j=0;j<refunds.length();j++){JSONObject r=refunds.getJSONObject(j);if(!r.optBoolean("void")&&id.equals(r.optString("accountId"))&&inRange(r,start,date))n=Math.subtractExact(n,Ledger.money(r,"amount"));}}
         for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(!r.optBoolean("void")&&id.equals(r.getString("accountId"))&&inRange(r,start,date))n=Math.subtractExact(n,Ledger.money(r,"amount"));}
         for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void")||!inRange(r,start,date))continue;long v=Ledger.money(r,"amount");
             if(id.equals(r.getString("fromId")))n=Math.subtractExact(n,v);if(id.equals(r.getString("toId")))n=Math.addExact(n,v);}
@@ -60,6 +61,7 @@ public final class Bookkeeping {
         return n;
     }
     public static void validate(JSONObject backup) throws JSONException {
+        RentCredits.validate(backup);VoidRecords.validate(backup);
         JSONArray accounts=backup.getJSONArray("accounts"),expenses=backup.getJSONArray("expenses"),transfers=backup.getJSONArray("transfers"),receipts=backup.getJSONArray("receipts"),reconciliations=backup.getJSONArray("reconciliations");
         if(backup.has("expenseCategories"))ExpenseCategories.validate(backup.getJSONArray("expenseCategories"),expenses);
         Set<String> accountIds=new HashSet<>(),names=new HashSet<>(),propertyIds=new HashSet<>(),ids=new HashSet<>();int cash=0;

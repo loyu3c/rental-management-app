@@ -134,4 +134,23 @@ public class FormInputTest {
         }finally{file.delete();}
     }
 
+    @Test public void refundReasonAcceptsInputWithoutPostingMoney() throws Exception {
+        Context context=instrumentation.getTargetContext();
+        JSONObject receipt=new JSONObject("{\"id\":\"R\",\"leaseId\":\"l\",\"date\":\"2026-01-01\",\"account\":\"Test cash\",\"accountId\":\"a\",\"amount\":200,\"allocations\":[],\"note\":\"\"}");
+        String before=new org.json.JSONArray().put(receipt).toString();
+        context.getSharedPreferences("catalog",0).edit().putString("leases",new org.json.JSONArray().put(lease).toString()).putString("receipts",before).commit();
+        open("rentRefundForm",new Class<?>[]{JSONObject.class},receipt);typeWithKeyboard("退款原因");
+        assertEquals(before,context.getSharedPreferences("catalog",0).getString("receipts",null));
+    }
+    @Test public void voidExpenseStartsCollapsedAndCanExpandReason() throws Exception {
+        Context context=instrumentation.getTargetContext();
+        String records="[{\"id\":\"e\",\"date\":\"2026-10-01\",\"accountId\":\"a\",\"category\":\"repair\",\"description\":\"Wrong expense\",\"amount\":900,\"void\":true,\"voidReason\":\"Duplicate entry\",\"splits\":[{\"propertyId\":\"p\",\"amount\":900}]}]";
+        context.getSharedPreferences("catalog",0).edit().putString("expenses",records).commit();
+        java.lang.reflect.Field selected=MainActivity.class.getDeclaredField("selected");selected.setAccessible(true);
+        instrumentation.runOnMainSync(()->{try{selected.setInt(activity,2);}catch(Exception e){throw new RuntimeException(e);}});open("render",new Class<?>[]{});
+        assertNull(labelled(instrumentation.getUiAutomation().getRootInActiveWindow(),"Duplicate entry",false));
+        assertTrue(awaitLabel("已撤銷／作廢",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("Duplicate entry",false);
+        assertEquals(records,context.getSharedPreferences("catalog",0).getString("expenses",null));
+    }
+
 }

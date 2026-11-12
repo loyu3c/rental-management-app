@@ -47,7 +47,7 @@ public class MainActivity extends Activity {
     private ScrollView mainScroll;private String renderedPageKey="";
     private final Map<String,Integer> pageScrolls=new HashMap<>(),propertyFilters=new HashMap<>(),propertySorts=new HashMap<>();
     private final Map<String,String> propertySearches=new HashMap<>();
-    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings","expenseCategories","owners","reportShares"};
+    private static final String[] KEYS={"properties","units","leases","invoices","receipts","accounts","expenses","transfers","reconciliations","deposits","settlements","meterReadings","expenseCategories","owners","reportShares","voidRecords"};
     private LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Taipei")); }
     private static final int EXPORT = 41, IMPORT = 42;
     private final String[] tabs = {"首頁", "收租", "記帳", "不動產", "報表"};
@@ -116,7 +116,7 @@ public class MainActivity extends Activity {
                 for(int i=0;i<receipts.length();i++) if(receipts.getJSONObject(i).optBoolean("cash",true)&&receipts.getJSONObject(i).getString("date").startsWith(month)) received+=Ledger.money(receipts.getJSONObject(i),"amount");
                 long settlementReceived=0;JSONArray settlements=data("settlements");for(int i=0;i<settlements.length();i++){JSONArray payments=settlements.getJSONObject(i).getJSONArray("payments");for(int j=0;j<payments.length();j++)if(payments.getJSONObject(j).getString("date").startsWith(month))settlementReceived+=payments.getJSONObject(j).getLong("amount");}
                 card("本月退租結算補繳","實際收到 $"+settlementReceived+"；押金抵付不算銀行匯款。");
-                card(month+" 收租", "本月已開帳單 $"+billed+"\n本月實際收款 $"+received+"\n所有帳單未付 $"+unpaid+"（含未到期）\n已逾期 $"+overdue);
+                card(month+" 收租", "本月已開帳單 $"+billed+"\n本月實際收款 $"+received+"\n本月預收租金退款 $"+PaymentHistory.query(fullBackup(),month,"全部","").getLong("rentRefunded")+"\n所有帳單未付 $"+unpaid+"（含未到期）\n已逾期 $"+overdue);
             } catch(Exception e) { card("收租資料異常", "請先匯出備份並停止收款登錄。"); }
             try {
                 YearMonth ym=YearMonth.from(today());card("本月已登錄支出", "$"+Bookkeeping.expenseTotal(data("expenses"),ym.atDay(1).toString(),ym.atEndOfMonth().toString(),null)+"（含房貸總扣款；不含提款轉帳）");
@@ -344,10 +344,16 @@ public class MainActivity extends Activity {
         else if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)compactInputs(group.getChildAt(i));}
     }
     private AlertDialog fullForm(String title,View content,String primary){return new FullFormDialog(title,content,primary,null);}
+    private void markVoided(LinearLayout box,JSONObject row){box.addView(text("撤銷原因："+row.optString("voidReason")+"\n撤銷時間："+row.optString("voidedAt",row.optString("voidDate")),12,Color.GRAY));markVoided(box);}
     private void markVoided(LinearLayout box) {
         GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(239,237,233));bg.setStroke(dp(1),Color.rgb(221,218,211));bg.setCornerRadius(dp(16));box.setBackground(bg);
         for(int i=0;i<box.getChildCount();i++)if(box.getChildAt(i) instanceof TextView){TextView value=(TextView)box.getChildAt(i);value.setTextColor(Color.rgb(126,123,117));value.setPaintFlags(value.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);value.setTypeface(null,Typeface.NORMAL);}
-        TextView status=text("已撤銷 · 僅供歷史查閱",12,Color.rgb(110,107,101));status.setPadding(0,dp(4),0,0);box.addView(status);
+        TextView status=text("已撤銷 · 僅供歷史查閱",12,Color.rgb(110,107,101));status.setPadding(0,dp(4),0,0);box.addView(status);collapseVoided(box);
+    }
+    private String firstRecordText(View view){if(view instanceof TextView)return ((TextView)view).getText().toString();if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++){String value=firstRecordText(group.getChildAt(i));if(!value.isEmpty())return value;}}return "歷史紀錄";}
+    private void collapseVoided(LinearLayout box){
+        String summary="已撤銷／作廢 · "+firstRecordText(box);LinearLayout details=form();while(box.getChildCount()>0){View child=box.getChildAt(0);box.removeViewAt(0);details.addView(child);}details.setVisibility(View.GONE);
+        Button toggle=styledButton(summary+"  ⌄",false,false);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setTextSize(14);box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));box.addView(details,new LinearLayout.LayoutParams(-1,-2));toggle.setContentDescription(summary+"，已收合");toggle.setOnClickListener(v->{boolean open=details.getVisibility()!=View.VISIBLE;details.setVisibility(open?View.VISIBLE:View.GONE);toggle.setText(summary+(open?"  ⌃":"  ⌄"));toggle.setContentDescription(summary+(open?"，已展開":"，已收合"));});
     }
     private LinearLayout inputRow(LinearLayout layout,String label) {
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
@@ -507,6 +513,7 @@ public class MainActivity extends Activity {
         for(JSONObject l:rows) {
             tapCard(l.optString("tenant"),l.optString("start")+" ～ "+l.optString("end")+"\n"+RentTerms.label(l)+" $"+fmt(l.optLong("rent"))+" · "+l.optString("cycle")+(l.has("terminatedOn")?"\n已退租："+l.optString("terminatedOn"):""),()->leaseLedger(l));
         }
+        archivedRecords(null,unit.optString("id"));
     }
 
     private void toggleRentalUnit(JSONObject unit){
@@ -740,7 +747,7 @@ public class MainActivity extends Activity {
         FilterPanel panel=new FilterPanel(layout,"payments");
         Spinner scope=choice(panel.controls,"月份範圍",new String[]{"指定月份","全部月份"});
         EditText month=dateField(panel.controls,"交易月份",true);month.setText(YearMonth.from(today()).toString());View monthRow=(View)month.getParent();
-        Spinner kind=choice(panel.controls,"收款類型",new String[]{"全部","租金水電","收到押金","退還押金","結算補繳"});
+        Spinner kind=choice(panel.controls,"收款類型",new String[]{"全部","租金水電","收到押金","退還押金","結算補繳","預收租金退款"});
         EditText search=labeledField(panel.controls,"搜尋租客／單位／帳戶／備註");LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list,new LinearLayout.LayoutParams(-1,-2));int[] limit={20};
         Runnable[] draw={null};draw[0]=()->{
             panel.summary.setText("目前："+(scope.getSelectedItemPosition()==0?month.getText():"全部月份")+" · "+kind.getSelectedItem()+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));
@@ -748,7 +755,7 @@ public class MainActivity extends Activity {
             try {
                 paymentScope=scope.getSelectedItemPosition();paymentKind=kind.getSelectedItemPosition();paymentMonth=month.getText().toString();paymentSearch=search.getText().toString();
                 JSONObject result=PaymentHistory.query(fullBackup(),scope.getSelectedItemPosition()==0?dateValue(month):"",kind.getSelectedItem().toString(),search.getText().toString());JSONArray rows=result.getJSONArray("rows");
-                card("符合查詢 "+rows.length()+" 筆","租金水電實收 $"+result.getLong("rent")+"\n押金收取 $"+result.getLong("depositReceived")+" · 退還 $"+result.getLong("depositRefunded")+"\n結算補繳 $"+result.getLong("topups")+"\n上述交易淨流入 $"+result.getLong("net"));
+                card("符合查詢 "+rows.length()+" 筆","租金水電實收 $"+result.getLong("rent")+"\n押金收取 $"+result.getLong("depositReceived")+" · 退還 $"+result.getLong("depositRefunded")+"\n預收租金退款 $"+result.getLong("rentRefunded")+"\n結算補繳 $"+result.getLong("topups")+"\n上述交易淨流入 $"+result.getLong("net"));
                 card("對照存摺時請留意","依實際收付日期查詢。押金不是租金收入；抵付費用不是匯款，不列入。合計依目前篩選的全部紀錄計算，並非帳戶餘額；請到帳戶流水核對其他支出與轉帳。");
                 for(int i=0;i<Math.min(limit[0],rows.length());i++){JSONObject row=rows.getJSONObject(i);tapCard(row.getString("date")+" · "+row.getString("kind")+" $"+row.getLong("amount"),row.getString("code")+" · "+row.getString("tenant")+"\n帳戶："+row.getString("account")+(row.getString("note").isEmpty()?"":"\n"+row.getString("note")),()->{JSONObject lease=find("leases",row.optString("leaseId"));if(lease!=null)leaseLedger(lease);});}
                 if(rows.length()==0)card("沒有符合的收付紀錄","可調整月份、類型或搜尋字詞；撤銷紀錄及非現金抵付不列入。");
@@ -835,7 +842,7 @@ public class MainActivity extends Activity {
             LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);header.addView(toolbar);
             Button back=iconButton(R.drawable.action_back,"返回上一頁");back.setOnClickListener(v->dialog.dismiss());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
             TextView heading=text(current==null?"租約已不存在":current.optString("unitCodeSnapshot")+"\n"+current.optString("tenant"),20,Color.rgb(90,61,37));heading.setTypeface(null,Typeface.BOLD);toolbar.addView(heading,headerTitleParams());
-            if(current!=null){Button more=iconButton(R.drawable.action_more,"租約更多操作");toolbar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{JSONObject latest=find("leases",leaseId);if(latest==null)return;RecordMenu menu=new RecordMenu();JSONObject unit=find("units",latest.optString("unitId"));if(unit!=null&&!latest.has("terminatedOn")){menu.labels.add("修改租約");menu.actions.add(()->leaseForm(unit,latest));}menu.labels.add("租客報表與分享");menu.actions.add(()->tenantReport(leaseId));openOperations(more,menu);});header.addView(text(current.has("terminatedOn")?"已退租 · "+current.optString("terminatedOn"):"租期 "+current.optString("start")+" ～ "+current.optString("end"),13,Color.DKGRAY));}
+            if(current!=null){Button more=iconButton(R.drawable.action_more,"租約更多操作");toolbar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));more.setOnClickListener(v->{JSONObject latest=find("leases",leaseId);if(latest==null)return;RecordMenu menu=new RecordMenu();JSONObject unit=find("units",latest.optString("unitId"));if(unit!=null&&!latest.has("terminatedOn")){menu.labels.add("修改租約");menu.actions.add(()->leaseForm(unit,latest));}menu.labels.add("作廢誤建租約");menu.actions.add(()->archiveRecord("leases",latest));menu.labels.add("租客報表與分享");menu.actions.add(()->tenantReport(leaseId));openOperations(more,menu);});header.addView(text(current.has("terminatedOn")?"已退租 · "+current.optString("terminatedOn"):"租期 "+current.optString("start")+" ～ "+current.optString("end"),13,Color.DKGRAY));}
             for(int i=0;i<buttons.length;i++)if(buttons[i]!=null){buttons[i].setTextColor(Color.rgb(90,61,37));GradientDrawable pill=new GradientDrawable();pill.setCornerRadius(dp(12));pill.setColor(i==tab[0]?Color.rgb(255,252,247):Color.TRANSPARENT);buttons[i].setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.argb(25,112,77,50)),pill,null));buttons[i].setTypeface(null,i==tab[0]?Typeface.BOLD:Typeface.NORMAL);buttons[i].setContentDescription(names[i]+(i==tab[0]?"，目前分頁":"，切換分頁"));buttons[i].setSelected(i==tab[0]);}
             drawLeaseLedger(content,current,tab[0]);
         };
@@ -849,7 +856,7 @@ public class MainActivity extends Activity {
             if(lease==null){card("租約已不存在","請返回上一頁重新選擇。");return;}
             JSONArray invoices=data("invoices"),receipts=data("receipts");long debt=0,received=0,credit=0;
             for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}
-            for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId"))){if(r.optBoolean("cash",true))received+=Ledger.money(r,"amount");credit+=Ledger.money(r,"amount")-Ledger.allocated(r);}}
+            for(int i=0;i<receipts.length();i++){JSONObject r=receipts.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId"))){if(r.optBoolean("cash",true))received+=Ledger.money(r,"amount");credit+=RentCredits.available(r);}}
             JSONObject settlement=Settlements.forLease(data("settlements"),lease.getString("id"));
             JSONObject deposit=Deposits.summary(lease.getString("id"),data("deposits"));
             if(tab==0){
@@ -858,14 +865,14 @@ public class MainActivity extends Activity {
                 if(!lease.has("terminatedOn"))primaryAction("＋ 收到租金",()->receiptForm(lease));
                 else {if(settlement!=null&&Settlements.due(settlement)>0)primaryAction("＋ 收到結算補繳",()->settlementPaymentForm(lease));if(deposit.getLong("held")>0)action("退還剩餘押金",()->depositForm(lease,true));}
                 card("收款摘要","租金與水電實收累計 $"+received+"\n尚未分配 $"+credit+"\n押金與結算補繳另外記錄。");
-                if(credit>0)action("分配先前尚未分配的收款",()->allocateCredit(lease));
+                action("未分配收款／退款",()->creditReview(lease));
                 card("租約資料",lease.optString("tenant")+"\n"+lease.optString("email")+"\n"+lease.optString("start")+" ～ "+lease.optString("end")+"\n"+RentTerms.label(lease)+" $"+fmt(lease.optLong("rent"))+" · "+lease.optString("cycle")+"\n約定押金 $"+fmt(lease.optLong("deposit"))+"\n"+lease.optString("utilities")+(lease.has("initialMeter")&&!lease.isNull("initialMeter")?"\n起始電度 "+fmt(lease.optLong("initialMeter")):"\n起始電度尚未設定"));
                 return;
             }
-            if(tab==2){depositCard(lease);if(settlement==null)card("退租結算","退租時分開記錄費用與押金收退，再核對實際退款或補繳。");settlementCard(lease);return;}
+            if(tab==2){action("作廢／撤銷歷史",()->showArchive(lease.optString("id")));action("未分配收款／退款",()->creditReview(lease));depositCard(lease);if(settlement==null)card("退租結算","退租時分開記錄費用與押金收退，再核對實際退款或補繳。");settlementCard(lease);return;}
             if(tab==3){leaseAttachmentDetails(lease);return;}
             if(!lease.has("terminatedOn"))primaryAction("＋ 建立當月帳單（租金＋水電）",()->billingForm(lease));
-            action("抄電表／查看照片",()->meterPanel(lease));
+            action("未分配收款／退款",()->creditReview(lease));action("作廢／撤銷歷史",()->showArchive(lease.optString("id")));action("抄電表／查看照片",()->meterPanel(lease));
             Map<String,List<JSONObject>> months=new TreeMap<>(Collections.reverseOrder());
             for(int i=0;i<invoices.length();i++) {JSONObject r=invoices.getJSONObject(i);if(lease.optString("id").equals(r.getString("leaseId")))months.computeIfAbsent(r.getString("month"),key->new ArrayList<>()).add(r);}
             for(Map.Entry<String,List<JSONObject>> entry:months.entrySet()) {
@@ -889,8 +896,8 @@ public class MainActivity extends Activity {
             if(months.isEmpty())card("尚無帳單","建立當月租金與水電後，會顯示在這裡。");
             card("收款紀錄","實際租金與水電收款，以及結算抵付紀錄。");
             for(int i=receipts.length()-1;i>=0;i--) {JSONObject r=receipts.getJSONObject(i);if(!lease.optString("id").equals(r.getString("leaseId")))continue;
-                LinearLayout receiptBox=card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),(r.optString("accountId").isEmpty()?r.getString("account"):accountName(r.optString("accountId")))+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(r.getLong("amount")-Ledger.allocated(r))+"\n"+r.optString("note"));
-                if(!lease.has("terminatedOn"))cardAction(receiptBox,"撤銷",()->deleteReceipt(r));
+                LinearLayout receiptBox=card(r.getString("date")+(r.optBoolean("cash",true)?" · 實收 $":" · 結算抵付 $")+r.getLong("amount"),(r.optString("accountId").isEmpty()?r.getString("account"):accountName(r.optString("accountId")))+"\n已分配 $"+Ledger.allocated(r)+" · 尚未分配 $"+(RentCredits.available(r))+"\n"+r.optString("note"));
+                receiptBox.addView(text("已退款 $"+RentCredits.refunded(r),13,Color.DKGRAY));if(!lease.has("terminatedOn"))cardAction(receiptBox,"撤銷",()->deleteReceipt(r));
             }
         }catch(Exception e){error(e);}finally{body=previous;}
     }
@@ -976,7 +983,7 @@ public class MainActivity extends Activity {
     private String allocationSummary(JSONObject receipt,JSONArray invoices) throws JSONException {
         StringBuilder text=new StringBuilder();JSONArray parts=receipt.getJSONArray("allocations");
         for(int i=0;i<parts.length();i++){JSONObject p=parts.getJSONObject(i);for(int j=0;j<invoices.length();j++) {JSONObject r=invoices.getJSONObject(j);if(r.getString("id").equals(p.getString("invoiceId")))text.append(r.getString("month")).append(" ").append(r.getString("kind")).append(" $ ").append(p.getLong("amount")).append("\n");}}
-        return text+"尚未分配 $"+(receipt.getLong("amount")-Ledger.allocated(receipt));
+        return text+"尚未分配 $"+(RentCredits.available(receipt));
     }
     private void receiptForm(JSONObject lease) {receiptForm(lease,null);}
     private void receiptForm(JSONObject lease,JSONObject draft) {
@@ -1003,12 +1010,40 @@ public class MainActivity extends Activity {
             }catch(Exception e){error(e);}}).show();
         }catch(Exception e){error(e);}}));dialog.show();
     }
+    private void showArchive(String leaseId){LinearLayout layout=form();LinearLayout previous=body;body=layout;try{archivedRecords(leaseId,null);}finally{body=previous;}showPanel("作廢／撤銷歷史",layout);}
+    private void creditReview(JSONObject lease){
+        LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{
+            card("未分配收款／退款","以下是已登錄收款，請勿重複新增收入。抵付只改分配；退款依實際付款日期及帳戶扣款，押金另外處理。");
+            JSONArray receipts=data("receipts");int count=0;for(int i=0;i<receipts.length();i++){JSONObject receipt=receipts.getJSONObject(i);if(!lease.optString("id").equals(receipt.optString("leaseId"))||!receipt.optBoolean("cash",true))continue;count++;
+                long available=RentCredits.available(receipt);LinearLayout box=card(receipt.getString("date")+" · 原收款 $"+receipt.getLong("amount"),accountName(receipt.optString("accountId"))+"\n已抵付 $"+Ledger.allocated(receipt)+" · 已退款 $"+RentCredits.refunded(receipt)+"\n未分配餘額 $"+available);
+                LinearLayout details=form();details.addView(text(allocationSummary(receipt,data("invoices")),14,Color.DKGRAY));details.setVisibility(View.GONE);box.addView(details);disclosure(box,"抵付去向",details);
+                if(available>0&&!settled(lease.optString("id"))){recordAction(box,"抵付帳單",()->allocateReceiptForm(receipt));recordAction(box,"預收租金退款",()->rentRefundForm(receipt));}
+                JSONArray refunds=RentCredits.refunds(receipt);for(int j=0;j<refunds.length();j++){JSONObject refund=refunds.getJSONObject(j);LinearLayout item=card(refund.getString("date")+" · 預收租金退款 $"+refund.getLong("amount"),accountName(refund.getString("accountId"))+"\n"+refund.getString("note")+(refund.optBoolean("void")?"\n撤銷："+refund.optString("voidReason")+" · "+refund.optString("voidedAt"):""));if(refund.optBoolean("void"))markVoided(item);else if(!settled(lease.optString("id")))recordAction(item,"撤銷錯誤退款登錄",()->voidRentRefund(receipt,refund));}
+            }
+            if(count==0)card("沒有租金水電收款","若是押金，請到押金明細核對。");
+        }catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("未分配收款／退款",layout,refresh);
+    }
+    private void allocateReceiptForm(JSONObject receipt){
+        try{List<JSONObject> bills=new ArrayList<>();JSONArray invoices=data("invoices"),receipts=data("receipts");for(int i=0;i<invoices.length();i++){JSONObject bill=invoices.getJSONObject(i);if(receipt.getString("leaseId").equals(bill.getString("leaseId"))&&Ledger.total(bill)>Ledger.paid(bill.getString("id"),receipts))bills.add(bill);}if(bills.isEmpty())throw new IllegalArgumentException("沒有可抵付帳單；請先建立正確帳單，或核對是否需要退款。");
+            String[] names=new String[bills.size()];for(int i=0;i<names.length;i++){JSONObject bill=bills.get(i);names[i]=bill.getString("month")+" · "+bill.getString("kind")+" · 尚欠 $"+fmt(Ledger.total(bill)-Ledger.paid(bill.getString("id"),receipts));}
+            LinearLayout layout=form();layout.addView(text("原收款 "+receipt.getString("date")+" · 未分配 $"+RentCredits.available(receipt)+"；只抵付所選帳單，不新增收入。",14,Color.DKGRAY));Spinner target=choice(layout,"抵付帳單",names);EditText money=number(layout,"本次抵付金額");
+            AlertDialog dialog=fullForm("分配既有收款",layout,"核對");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{JSONObject before=fullBackup(),next=RentCredits.allocate(before,receipt.getString("id"),bills.get(target.getSelectedItemPosition()).getString("id"),amount(money,false));validateBackup(next);new AlertDialog.Builder(this).setMessage("抵付 "+target.getSelectedItem()+"\n金額 $"+fmt(amount(money,false))+"\n僅改分配，不新增金流。").setNegativeButton("返回修改",null).setPositiveButton("確認分配",(d,n)->{try{if(saveSettlement(next,before))dialog.dismiss();}catch(Exception e){error(e);}}).show();}catch(Exception e){error(e);}}));dialog.show();
+        }catch(Exception e){error(e);}
+    }
+    private void rentRefundForm(JSONObject receipt){
+        try{List<JSONObject> accounts=accountRows();if(accounts.isEmpty())throw new IllegalArgumentException("請先建立實際退款帳戶");LinearLayout layout=form();layout.addView(text("原收款 "+receipt.getString("date")+" · 未分配 $"+RentCredits.available(receipt)+"\n實際退款後再確認登錄；此筆不是支出，也不是押金退款。",14,Color.DKGRAY));EditText date=dateField(layout,"實際退款日期",false);date.setText(today().toString());Spinner account=accountChoice(layout,accounts,"實際付款帳戶");for(int i=0;i<accounts.size();i++)if(accounts.get(i).optString("id").equals(receipt.optString("accountId")))account.setSelection(i);EditText money=number(layout,"本次退款金額"),reason=field(layout,"退款原因／交易辨識");money.setText(String.valueOf(RentCredits.available(receipt)));
+            AlertDialog dialog=fullForm("預收租金退款",layout,"核對");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{JSONObject before=fullBackup(),next=RentCredits.refund(before,receipt.getString("id"),dateValue(date),accounts.get(account.getSelectedItemPosition()).getString("id"),amount(money,false),reason.getText().toString());validateBackup(next);new AlertDialog.Builder(this).setMessage("實際退款 $"+fmt(amount(money,false))+"\n日期："+dateValue(date)+"\n付款帳戶："+accounts.get(account.getSelectedItemPosition()).optString("name")+"\n原因："+reason.getText()+"\n確認僅登錄已發生的退款。").setNegativeButton("返回修改",null).setPositiveButton("確認已退款",(d,n)->{try{if(saveSettlement(next,before))dialog.dismiss();}catch(Exception e){error(e);}}).show();}catch(Exception e){error(e);}}));dialog.show();
+        }catch(Exception e){error(e);}
+    }
+    private void voidRentRefund(JSONObject receipt,JSONObject refund){
+        LinearLayout layout=form();layout.addView(text("僅撤銷錯誤登錄；已實際退款請勿用撤銷當作收回款項。",14,Color.DKGRAY));EditText reason=field(layout,"撤銷原因");AlertDialog dialog=fullForm("撤銷退款登錄",layout,"核對");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{JSONObject before=fullBackup(),next=RentCredits.voidRefund(before,receipt.getString("id"),refund.getString("id"),reason.getText().toString());validateBackup(next);new AlertDialog.Builder(this).setMessage("確認撤銷這筆錯誤退款登錄並保留痕跡？").setNegativeButton("返回修改",null).setPositiveButton("確認撤銷",(d,n)->{try{if(saveSettlement(next,before))dialog.dismiss();}catch(Exception e){error(e);}}).show();}catch(Exception e){error(e);}}));dialog.show();
+    }
     private void allocateCredit(JSONObject lease) {
         try {
             JSONArray invoices=data("invoices"),receipts=data("receipts");JSONArray next=new JSONArray(receipts.toString());StringBuilder preview=new StringBuilder();boolean changed=false;
             for(int i=0;i<next.length();i++) {
                 JSONObject r=next.getJSONObject(i);if(!lease.getString("id").equals(r.getString("leaseId")))continue;
-                long left=r.getLong("amount")-Ledger.allocated(r);if(left==0)continue;
+                long left=RentCredits.available(r);if(left==0)continue;
                 JSONObject allocation=Ledger.receipt(lease.getString("id"),r.getString("date"),r.getString("account"),left,r.optString("note"),invoices,next);
                 JSONArray added=allocation.getJSONArray("allocations"),parts=r.getJSONArray("allocations");
                 for(int j=0;j<added.length();j++) {
@@ -1024,20 +1059,23 @@ public class MainActivity extends Activity {
             }).show();
         }catch(Exception e){error(e);}
     }
-    private void deleteInvoice(JSONObject invoice) {
-        new AlertDialog.Builder(this).setMessage(display(String.valueOf("僅限尚未收款的錯誤帳單可撤銷。確定撤銷此張帳單？"))).setNegativeButton("取消",null).setPositiveButton("撤銷",(d,b)->{try{
-            if(Ledger.paid(invoice.getString("id"),data("receipts"))!=0)throw new IllegalArgumentException("已有收款分配，不能撤銷帳單。");
-            JSONArray rows=data("invoices"),next=new JSONArray();for(int i=0;i<rows.length();i++)if(!rows.getJSONObject(i).getString("id").equals(invoice.getString("id")))next.put(rows.getJSONObject(i));
-            if(save("invoices",next)){render();Toast.makeText(this,"已撤銷",Toast.LENGTH_LONG).show();}
-        }catch(Exception e){error(e);}}).show();
+    private void deleteInvoice(JSONObject invoice){archiveRecord("invoices",invoice);}
+    private void deleteReceipt(JSONObject receipt){archiveRecord("receipts",receipt);}
+    private void archiveRecord(String key,JSONObject row){
+        LinearLayout layout=form();layout.addView(text(key.equals("leases")?"只處理誤建租約；已有帳務或分享時需先處理關聯。實際搬離請辦退租結算。":"撤銷錯誤登錄並保留原資料；實際退款請使用預收租金退款。",14,Color.DKGRAY));EditText reason=field(layout,"作廢／撤銷原因");
+        AlertDialog dialog=fullForm(key.equals("leases")?"作廢誤建租約":"撤銷錯誤登錄",layout,"核對");dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
+            JSONObject before=fullBackup(),next=VoidRecords.archive(before,key,row.getString("id"),reason.getText().toString());validateBackup(next);
+            new AlertDialog.Builder(this).setMessage("確認後退出有效紀錄，原內容、原因及時間保留於撤銷歷史。").setNegativeButton("返回修改",null).setPositiveButton("確認作廢／撤銷",(d,n)->{try{if(saveSettlement(next,before))dialog.dismiss();}catch(Exception e){error(e);}}).show();
+        }catch(Exception e){error(e);}}));dialog.show();
     }
-    private void deleteReceipt(JSONObject receipt) {
-        new AlertDialog.Builder(this).setMessage(display(String.valueOf("撤銷錯誤登錄會移除此筆收款與所有分配，恢復帳單未付金額。實際退款不能用撤銷代替。確定？"))).setNegativeButton("取消",null).setPositiveButton("撤銷錯誤登錄",(d,b)->{try{
-            JSONArray rows=data("receipts"),next=new JSONArray();for(int i=0;i<rows.length();i++)if(!rows.getJSONObject(i).getString("id").equals(receipt.getString("id")))next.put(rows.getJSONObject(i));
-            if(save("receipts",next)){render();Toast.makeText(this,"已撤銷",Toast.LENGTH_LONG).show();}
-        }catch(Exception e){error(e);}}).show();
+    private void archivedRecords(String leaseId,String unit){
+        try{JSONArray rows=data("voidRecords");for(int i=rows.length()-1;i>=0;i--){JSONObject entry=rows.getJSONObject(i),old=entry.getJSONObject("previous");String kind=entry.getString("kind");if(leaseId!=null&&!leaseId.equals(entry.getString("leaseId")))continue;if(unit!=null&&(!kind.equals("leases")||!unit.equals(old.optString("unitId"))))continue;
+            String title=kind.equals("leases")?"作廢租約 · "+old.optString("unitCodeSnapshot")+" · "+old.optString("tenant"):"撤銷"+(kind.equals("invoices")?"帳單":"收款")+" · "+old.optString("date",old.optString("month"));
+            LinearLayout box=card(title,"原因："+entry.getString("reason")+"\n時間："+entry.getString("voidedAt"));
+            if(kind.equals("leases")){box.addView(text("原租期 "+old.optString("start")+" ～ "+old.optString("end")+"\n租金 $"+old.optLong("rent")+" · 約定押金 $"+old.optLong("deposit"),14,Color.GRAY));if(!old.optString("initialMeterPhoto").isEmpty())photoAttachmentRow(box,"原起始電表照片",old.optString("initialMeterPhoto"),null);if(!old.optString("contractFile").isEmpty()){Button pdf=styledButton("查看原 PDF 合約",false,false);pdf.setOnClickListener(v->viewContract(old));box.addView(pdf);}Button history=styledButton("查看相關撤銷紀錄",false,false);history.setOnClickListener(v->showArchive(old.optString("id")));box.addView(history);}
+            else box.addView(text(kind.equals("receipts")?"原收款 $"+old.getLong("amount")+"\n"+allocationSummary(old,entry.optJSONArray("invoices")==null?data("invoices"):entry.getJSONArray("invoices")):"原帳單 $"+Ledger.total(old)+" · "+old.optString("kind"),14,Color.GRAY));markVoided(box);
+        }}catch(Exception e){error(e);}
     }
-
     private void depositCard(JSONObject lease) throws JSONException {
         JSONObject sums=Deposits.summary(lease.getString("id"),data("deposits"));
         card("押金餘額 $"+sums.getLong("held"), "約定 $"+lease.getLong("deposit")+"\n累計已收 $"+sums.getLong("received")+" · 已退 $"+sums.getLong("refunded")+"\n抵付費用 $"+sums.getLong("applied")+" · 持有／待退餘額 $"+sums.getLong("held")+"\n押金不是租金收入；退租時可另做分項結算。");
@@ -1045,7 +1083,7 @@ public class MainActivity extends Activity {
         JSONArray rows=data("deposits");List<JSONObject> sorted=new ArrayList<>();for(int i=0;i<rows.length();i++)if(lease.getString("id").equals(rows.getJSONObject(i).getString("leaseId")))sorted.add(rows.getJSONObject(i));
         sorted.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());
         for(JSONObject r:sorted){LinearLayout record=card(r.getString("date")+" · "+r.getString("kind")+" $"+r.getLong("amount"),accountName(r.getString("accountId"))+"\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷："+r.optString("voidReason"):""));
-            if(r.getBoolean("void"))markVoided(record);else if(!lease.has("terminatedOn"))cardAction(record,"撤銷",()->voidMovement("deposits",r));}
+            if(r.getBoolean("void"))markVoided(record,r);else if(!lease.has("terminatedOn"))cardAction(record,"撤銷",()->voidMovement("deposits",r));}
     }
     private void depositForm(JSONObject lease,boolean refund) {
         if(lease.has("terminatedOn")&&!refund){error(new IllegalArgumentException("已退租不能新增押金收取"));return;}
@@ -1109,7 +1147,7 @@ public class MainActivity extends Activity {
     }
     private void settlementForm(JSONObject lease) {
         if(settled(lease.optString("id"))){error(new IllegalArgumentException("此租約已結算"));return;}
-        LinearLayout layout=form();EditText date=dateField(layout,"退租日期",false);date.setText(today().isAfter(LocalDate.parse(lease.optString("end")))?lease.optString("end"):today().toString());
+        LinearLayout layout=form();Button credits=styledButton("核對未分配收款／退款",false,false);credits.setOnClickListener(v->creditReview(lease));layout.addView(credits);layout.addView(text("請先核對未分配收款；抵付已有帳單或登錄實際退款後再核對結算，返回會保留本頁輸入。",14,Color.DKGRAY));EditText date=dateField(layout,"退租日期",false);date.setText(today().isAfter(LocalDate.parse(lease.optString("end")))?lease.optString("end"):today().toString());
         layout.addView(text("最後一期租金自行填寫，水電沿用原帳單；尚未開立的部分會一起建立。修繕／其他費用是向租客收取，不是付給師傅的支出。",14,Color.DKGRAY));
         EditText rent=number(layout,"最後一期租金"),water=number(layout,"最後一期水費"),prior=number(layout,"上期電表讀數"),current=number(layout,"最後電表讀數"),repairs=number(layout,"向租客收修繕費"),other=number(layout,"其他結算費用"),note=field(layout,"結算說明／費用明細");
         repairs.setText("0");other.setText("0");boolean collect=lease.optString("utilities").equals("管理者代收水電");
@@ -1135,7 +1173,7 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject fullBackup() throws JSONException {
-        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",12);for(String key:KEYS)backup.put(key,data(key));return backup;
+        JSONObject backup=new JSONObject().put("format","rental-catalog").put("version",13);for(String key:KEYS)backup.put(key,data(key));return backup;
     }
     private boolean saveChecked(String key,JSONArray rows) throws JSONException {
         JSONObject backup=fullBackup().put(key,rows);Bookkeeping.validate(backup);return save(key,rows);
@@ -1174,7 +1212,7 @@ public class MainActivity extends Activity {
             for(JSONObject r:rows){boolean transfer=r.has("fromId"),voided=r.optBoolean("void");if(!expenseMonth.isEmpty()&&!r.optString("date").startsWith(expenseMonth))continue;if(sections[2]==0&&transfer||sections[2]==1&&!transfer)continue;if(expenseFilter==1&&voided||expenseFilter==2&&!voided)continue;
                 String title=r.optString("date")+" · "+(transfer?"轉帳":categoryName(r.optString("category")))+" $"+r.optLong("amount");String detail=r.optString("description")+(voided?"\n已撤銷錯誤紀錄":"");
                 if(transfer)detail+="\n"+accountName(r.optString("fromId"))+" → "+accountName(r.optString("toId"));else{detail+="\n付款："+accountName(r.optString("accountId"));JSONArray splits=r.optJSONArray("splits");if(splits!=null)for(int j=0;j<splits.length();j++)detail+="\n"+propertyName(splits.optJSONObject(j).optString("propertyId"))+" $"+splits.optJSONObject(j).optLong("amount");}
-                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;totals.add(r);matches++;if(shown>=expenseLimit)continue;shown++;if(!transfer)expenseCard(r);else {LinearLayout box=card(title,detail);if(voided)markVoided(box);else cardAction(box,"撤銷",()->voidMovement("transfers",r));}
+                if(!(title+" "+detail+" "+display(title+" "+detail)).toLowerCase(Locale.ROOT).contains(query))continue;totals.add(r);matches++;if(shown>=expenseLimit)continue;shown++;if(!transfer)expenseCard(r);else {LinearLayout box=card(title,detail);if(voided)markVoided(box,r);else cardAction(box,"撤銷",()->voidMovement("transfers",r));}
             }
             summary.setText((sections[2]==1?"符合條件的有效轉帳 $"+fmt(totals.transfers):"符合條件的有效支出 $"+fmt(totals.expenses))+"\n包含尚未載入的符合紀錄；已撤銷不計，轉帳不列支出。" );
             if(matches==0)card("沒有符合條件的紀錄",rows.isEmpty()?"可以逐步補登半年資料。":"請調整月份、紀錄類型或搜尋文字。");else {body.addView(text("顯示 "+shown+" / "+matches+" 筆",14,Color.DKGRAY));if(matches>shown)action("載入更多紀錄",()->{expenseLimit+=15;drawExpenseRecords(records);});}
@@ -1202,7 +1240,7 @@ public class MainActivity extends Activity {
         JSONArray splits=row.getJSONArray("splits");Button toggle=styledButton("分攤明細 · "+splits.length()+" 個不動產  ▾",false,false);toggle.setTextSize(13);toggle.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);toggle.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));box.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout details=new LinearLayout(this);details.setOrientation(LinearLayout.VERTICAL);details.setVisibility(View.GONE);for(int i=0;i<splits.length();i++){JSONObject split=splits.getJSONObject(i);details.addView(text(propertyName(split.getString("propertyId"))+"  $"+fmt(split.getLong("amount")),14,Color.rgb(112,105,92)));}box.addView(details);
         toggle.setContentDescription("分攤明細，已收合");toggle.setOnClickListener(v->{boolean open=details.getVisibility()!=View.VISIBLE;details.setVisibility(open?View.VISIBLE:View.GONE);toggle.setText("分攤明細 · "+splits.length()+" 個不動產"+(open?"  ▴":"  ▾"));toggle.setContentDescription("分攤明細，"+(open?"已展開":"已收合"));});
-        if(row.optBoolean("void")){markExpenseVoided(box);box.addView(text("已撤銷 · "+row.optString("voidReason"),12,Color.GRAY));}
+        if(row.optBoolean("void")){markExpenseVoided(box);box.addView(text("已撤銷 · "+row.optString("voidReason")+" · "+row.optString("voidedAt",row.optString("voidDate")),12,Color.GRAY));collapseVoided(box);}
     }
     private void markExpenseVoided(View view){
         if(view instanceof TextView&&!(view instanceof Button)){TextView text=(TextView)view;text.setTextColor(Color.GRAY);text.setTypeface(null,Typeface.NORMAL);text.setPaintFlags(text.getPaintFlags()|android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);}
@@ -1393,7 +1431,7 @@ public class MainActivity extends Activity {
         AlertDialog dialog=fullForm("撤銷錯誤紀錄",layout,"確認撤銷");
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{try{
             if(reason.getText().toString().trim().isEmpty())throw new IllegalArgumentException("請填撤銷原因");JSONArray rows=data(key);
-            for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getString("id").equals(row.getString("id")))rows.getJSONObject(i).put("void",true).put("voidReason",reason.getText().toString().trim()).put("voidDate",today().toString());
+            for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getString("id").equals(row.getString("id")))rows.getJSONObject(i).put("void",true).put("voidReason",reason.getText().toString().trim()).put("voidDate",today().toString()).put("voidedAt",java.time.Instant.now().toString());
             if(saveChecked(key,rows)){dialog.dismiss();render();}
         }catch(Exception e){error(e);}}));dialog.show();
     }
@@ -1441,6 +1479,7 @@ public class MainActivity extends Activity {
                 for(int i=0;i<transfers.length();i++){JSONObject r=transfers.getJSONObject(i);if(r.optBoolean("void"))continue;boolean from=id.equals(r.getString("fromId")),to=id.equals(r.getString("toId"));if(from||to)lines.add(new JSONObject().put("date",r.getString("date")).put("label","轉帳 "+accountName(r.getString("fromId"))+" → "+accountName(r.getString("toId"))).put("delta",from?-r.getLong("amount"):r.getLong("amount")).put("note",r.getString("description")).put("sourceKey","transfers").put("sourceId",r.getString("id")));}
                 JSONArray deposits=data("deposits");for(int i=0;i<deposits.length();i++){JSONObject r=deposits.getJSONObject(i);if(r.getString("kind").equals("押金抵付費用")||r.getBoolean("void")||!id.equals(r.getString("accountId")))continue;
                     lines.add(new JSONObject().put("date",r.getString("date")).put("label",r.getString("kind")+" · "+receiptTenant(r)).put("delta",r.getString("kind").equals("收到押金")?r.getLong("amount"):-r.getLong("amount")).put("note",r.getString("note")).put("sourceKey","deposits").put("sourceId",r.getString("id")));}
+                JSONArray refundSources=data("receipts");for(int ri=0;ri<refundSources.length();ri++){JSONObject source=refundSources.getJSONObject(ri);JSONArray refunds=RentCredits.refunds(source);for(int rj=0;rj<refunds.length();rj++){JSONObject refund=refunds.getJSONObject(rj);if(!refund.optBoolean("void")&&id.equals(refund.getString("accountId")))lines.add(new JSONObject().put("date",refund.getString("date")).put("label","預收租金退款").put("delta",-refund.getLong("amount")).put("note",refund.getString("note")));}}
                 JSONArray settlements=data("settlements");for(int i=0;i<settlements.length();i++){JSONObject st=settlements.getJSONObject(i);JSONArray payments=st.getJSONArray("payments");for(int j=0;j<payments.length();j++){JSONObject p=payments.getJSONObject(j);if(id.equals(p.getString("accountId")))lines.add(new JSONObject().put("date",p.getString("date")).put("label","退租結算補繳 · "+st.getString("unitCodeSnapshot")+" · "+st.getString("tenantSnapshot")).put("delta",p.getLong("amount")).put("note",p.getString("note")));}}
                 lines.sort(Comparator.comparing((JSONObject r)->r.optString("date")).reversed());int n=0;
                 for(JSONObject r:lines) {if(LocalDate.parse(r.getString("date")).isAfter(LocalDate.parse(end)))continue;long delta=r.getLong("delta");LinearLayout statementBox=card(r.getString("date")+" · "+r.getString("label"),(delta>=0?"+":"")+fmt(delta)+"\n"+r.getString("note")+(LocalDate.parse(r.getString("date")).isBefore(LocalDate.parse(start))?"\n歷史補登，未加減期初餘額":""));n++;if(r.has("sourceKey")){JSONObject source=find(r.optString("sourceKey"),r.optString("sourceId"));if(source!=null&&!(r.optString("sourceKey").equals("deposits")&&settled(source.optString("leaseId"))))cardAction(statementBox,"撤銷",()->voidMovement(r.optString("sourceKey"),source));}}
@@ -1706,7 +1745,7 @@ public class MainActivity extends Activity {
             card("抄電表與照片",lease.optString("unitCodeSnapshot")+" · "+lease.optString("tenant")+"\n紀錄不會自動開單；建立帳單時帶入同租約、同月份最新有效讀數。照片可點開檢查。已開帳單不會被改動。");
             action("＋ 新增抄表紀錄",()->meterForm(lease));JSONArray rows=data("meterReadings");for(int i=rows.length()-1;i>=0;i--){JSONObject r=rows.getJSONObject(i);if(!lease.optString("id").equals(r.optString("leaseId")))continue;
                 LinearLayout meterBox=card(r.getString("month")+" · 抄表日 "+r.getString("date"),"電表 "+fmt(r.getLong("previous"))+" → "+fmt(r.getLong("current"))+" · 用量 "+fmt(r.getLong("current")-r.getLong("previous"))+" 度\n"+r.getString("note")+(r.getBoolean("void")?"\n已撤銷錯誤紀錄":""));
-                if(r.getBoolean("void"))markVoided(meterBox);
+                if(r.getBoolean("void"))markVoided(meterBox,r);
                 if(!r.getString("file").isEmpty())photoAttachmentRow(meterBox,"電表照片",r.getString("file"),null);
                 if(!r.getBoolean("void"))recordAction(meterBox,"撤銷",()->new AlertDialog.Builder(this).setTitle("撤銷抄表紀錄？").setMessage("已開帳單不會改動；撤銷後不再帶入新帳單。").setNegativeButton("取消",null).setPositiveButton("確認撤銷",(d,w)->{try{JSONArray next=data("meterReadings");for(int j=0;j<next.length();j++)if(next.getJSONObject(j).getString("id").equals(r.getString("id")))next.getJSONObject(j).put("void",true);if(saveChecked("meterReadings",next))render();}catch(Exception e){error(e);}}).show());
             }
@@ -1781,15 +1820,15 @@ public class MainActivity extends Activity {
     private void restoreArchive(JSONObject backup,File staging) {
         AlertDialog progress=busy("正在還原帳務與照片…");new Thread(()->{List<File> added=new ArrayList<>();boolean committed=false;try{
             JSONArray rows=backup.getJSONArray("meterReadings");for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);String old=row.getString("file");if(old.isEmpty())continue;String name=UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("照片還原失敗");added.add(destination);row.put("file",name);}
-            for(int i=0;i<backup.getJSONArray("leases").length();i++){JSONObject lease=backup.getJSONArray("leases").getJSONObject(i);String old=lease.optString("initialMeterPhoto");if(old.isEmpty())continue;String name=UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("起始電表照片還原失敗");added.add(destination);lease.put("initialMeterPhoto",name);}
+            for(int i=0;i<VoidRecords.allLeases(backup).length();i++){JSONObject lease=VoidRecords.allLeases(backup).getJSONObject(i);String old=lease.optString("initialMeterPhoto");if(old.isEmpty())continue;String name=UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("起始電表照片還原失敗");added.add(destination);lease.put("initialMeterPhoto",name);}
             Map<String,String> expenseMapping=new HashMap<>();for(String old:ExpensePhotos.files(backup)){String name="exp-"+UUID.randomUUID()+".jpg";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("支出照片還原失敗");added.add(destination);expenseMapping.put(old,name);}ExpensePhotos.remap(backup,expenseMapping);
-            JSONArray contractLeases=backup.getJSONArray("leases");for(int i=0;i<contractLeases.length();i++){JSONObject lease=contractLeases.getJSONObject(i);String old=lease.optString("contractFile");if(old.isEmpty())continue;String name=UUID.randomUUID()+".pdf";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("PDF合約還原失敗");added.add(destination);lease.put("contractFile",name);}
+            JSONArray contractLeases=VoidRecords.allLeases(backup);for(int i=0;i<contractLeases.length();i++){JSONObject lease=contractLeases.getJSONObject(i);String old=lease.optString("contractFile");if(old.isEmpty())continue;String name=UUID.randomUUID()+".pdf";File destination=new File(photoDir(),name);if(!new File(staging,old).renameTo(destination))throw new IOException("PDF合約還原失敗");added.add(destination);lease.put("contractFile",name);}
             JSONArray shareRows=backup.getJSONArray("reportShares");for(int i=0;i<shareRows.length();i++)shareRows.getJSONObject(i).put("status","unconfirmed");
             validateBackup(backup);android.content.SharedPreferences.Editor editor=getSharedPreferences("catalog",MODE_PRIVATE).edit();for(String key:KEYS)editor.putString(key,backup.getJSONArray(key).toString());if(!editor.commit())throw new IOException("帳務保存失敗");committed=true;clearStaging(staging);runOnUiThread(()->{progress.dismiss();propertyId="";unitId="";render();body.post(this::refreshPanels);Toast.makeText(this,"資料與照片已還原",Toast.LENGTH_LONG).show();});
         }catch(Exception e){if(!committed)for(File file:added)file.delete();clearStaging(staging);runOnUiThread(()->{progress.dismiss();error(new IllegalArgumentException("還原失敗："+e.getMessage()));});}}).start();
     }
     private void validateBackup(JSONObject backup) throws Exception {
-        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 12))
+        if (!"rental-catalog".equals(backup.getString("format")) || (backup.getInt("version") < 1 || backup.getInt("version") > 13))
             throw new IllegalArgumentException();
         if(backup.getInt("version")==1) {backup.put("invoices",new JSONArray());backup.put("receipts",new JSONArray());}
         if(backup.getInt("version")<3)for(String key:new String[]{"accounts","expenses","transfers","reconciliations"})backup.put(key,new JSONArray());
@@ -1798,7 +1837,8 @@ public class MainActivity extends Activity {
         if(backup.getInt("version")<6)backup.put("meterReadings",new JSONArray());
         if(backup.getInt("version")<7)backup.put("expenseCategories",ExpenseCategories.defaults());
         if(backup.getInt("version")<12){backup.put("owners",new JSONArray());backup.put("reportShares",new JSONArray());}
-        backup.getJSONArray("reportShares");Owners.validate(backup);
+        if(backup.getInt("version")<13)backup.put("voidRecords",new JSONArray());
+        backup.getJSONArray("reportShares");Owners.validate(backup);VoidRecords.validate(backup);
         LeaseFiles.validate(backup);InitialMeterPhotos.files(backup);ExpensePhotos.files(backup);
         java.util.Set<String> properties = new java.util.HashSet<>(), units = new java.util.HashSet<>(), leases = new java.util.HashSet<>();
         java.util.Set<String> codes = new java.util.HashSet<>();
