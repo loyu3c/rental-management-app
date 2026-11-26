@@ -35,3 +35,14 @@ requirements.md、tenancy-and-parking.md記錄業務規則；mobile-design.md為
 ## 當前狀態
 
 0.5.0-preview 已加入暖色分層建檔、租約、帳單、抄表、年繳與合併收款及完整備份；固定簽署 APK、帳務測試與 lint 已通過 GitHub Actions。實機操作及覆蓋保留資料更新尚待驗證；Google、拍照、語音、支出、押金收付仍未啟用。
+
+## 2026-11-26：後續修改與 APK 交付
+
+使用者已授權後續 App 功能修改完成、相關檢查通過後，直接合併並發布可安裝 APK，不必每批重複詢問是否發布。
+
+- 沿用 applicationId `com.loyu3c.rental.preview` 與既有固定簽署金鑰，遞增 versionCode 與 versionName；設定頁顯示實際安裝版本。
+- 交付為原 App 的覆蓋更新，保留帳務、附件與設定，不另建 App；不得要求先解除安裝以解決簽章問題。
+- 發布前檢查舊資料相容、相關單元測試、Google 同步契約測試、Android lint 與 release 建置。
+- 沿用 tag 觸發的 Release APK 流程，確認 APK 已上傳，且簽章憑證指紋與前版相符，再提供下載連結。
+- 覆蓋安裝與資料保存的實機驗證若尚未執行，須如實註明，不把 CI 通過當成實機驗收。
+- 安裝前建議先從設定匯出完整備份。若簽章不符則停止更新並調查，不引導解除安裝。
