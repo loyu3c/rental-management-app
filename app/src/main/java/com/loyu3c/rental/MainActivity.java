@@ -1223,7 +1223,7 @@ public class MainActivity extends Activity {
     private String incomeDetail(JSONObject row){return "分類："+row.optString("category")+"\n收款帳戶："+accountName(row.optString("accountId"))+"\n"+row.optString("description");}
     private void incomeCard(JSONObject row){
         LinearLayout box=card(row.optString("date")+" · 收入 $"+fmt(row.optLong("amount")),incomeDetail(row));
-        Button more=iconButton(R.drawable.action_more,"收入更多操作");box.addView(more);more.setOnClickListener(v->{RecordMenu menu=new RecordMenu();if(!row.optBoolean("void")){menu.labels.add("修改");menu.actions.add(()->incomeForm(row));menu.labels.add("撤銷");menu.actions.add(()->voidMovement("incomes",row));}if(row.has("history")){menu.labels.add("修改紀錄");menu.actions.add(()->incomeHistory(row.optString("id")));}openOperations(more,menu);});
+        View title=box.getChildAt(0);box.removeView(title);LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.TOP);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));Button more=iconButton(R.drawable.action_more,"收入更多操作");heading.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));box.addView(heading,0);more.setOnClickListener(v->{RecordMenu menu=new RecordMenu();if(!row.optBoolean("void")){menu.labels.add("修改");menu.actions.add(()->incomeForm(row));menu.labels.add("撤銷");menu.actions.add(()->voidMovement("incomes",row));}if(row.has("history")){menu.labels.add("修改紀錄");menu.actions.add(()->incomeHistory(row.optString("id")));}openOperations(more,menu);});
         if(row.optBoolean("void")){markExpenseVoided(box);box.addView(text("已撤銷 · "+row.optString("voidReason")+" · "+row.optString("voidedAt"),12,Color.GRAY));collapseVoided(box);}
     }
     private void incomeHistory(String id){LinearLayout layout=form(),previous=body;body=layout;try{JSONObject current=find("incomes",id);if(current==null)return;card("目前版本 · $"+fmt(current.optLong("amount")),current.optString("date")+"\n"+incomeDetail(current));JSONArray history=current.optJSONArray("history");if(history!=null)for(int i=history.length()-1;i>=0;i--){JSONObject h=history.getJSONObject(i),old=h.getJSONObject("previous");card("修改前 · "+h.getString("changedAt"),old.getString("date")+" · $"+fmt(old.getLong("amount"))+"\n"+incomeDetail(old));}}catch(Exception e){error(e);}finally{body=previous;}showPanel("收入修改紀錄",layout);}
@@ -1627,7 +1627,7 @@ public class MainActivity extends Activity {
         include.setOnCheckedChangeListener((b,checked)->refresh.run());search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("對應／更正收款帳戶",layout,refresh);
     }
     private void expenseReport() {
-        LinearLayout layout=form();EditText month=dateField(layout,"支出月份",true);month.setText(YearMonth.from(today()).toString());
+        LinearLayout layout=form();EditText month=dateField(layout,"收支月份",true);month.setText(YearMonth.from(today()).toString());
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list);
         Runnable refresh=()->{
             list.removeAllViews();LinearLayout previous=body;body=list;try{
@@ -1641,7 +1641,7 @@ public class MainActivity extends Activity {
                     expenseCard(r);}
             }catch(Exception e){card("請選擇有效月份","點選月份欄位選取年與月");}finally{body=previous;}
         };
-        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("支出報表",layout,refresh);
+        month.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){refresh.run();}public void afterTextChanged(Editable e){}});refresh.run();showPanel("收支報表",layout,refresh);
     }
 
     private static final int CAMERA_PHOTO=43, PICK_PHOTO=44;

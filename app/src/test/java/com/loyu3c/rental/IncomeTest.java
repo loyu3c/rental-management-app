@@ -14,6 +14,13 @@ public class IncomeTest {
         JSONObject backup=new JSONObject().put("accounts",new JSONArray().put(a)).put("incomes",rows);Income.validate(backup);assertEquals(1035,balance(a,rows));assertEquals(25,rows.getJSONObject(0).getJSONArray("history").getJSONObject(0).getJSONObject("previous").getLong("amount"));
         rows.getJSONObject(0).put("void",true).put("voidReason","登錯").put("voidedAt","2026-11-26T08:01:00Z");Income.validate(backup);assertEquals(1000,balance(a,rows));
     }
+    @Test public void backupArchiveRetainsIncomeAndItsEditHistory()throws Exception{
+        JSONObject first=Income.create("2026-11-05","bank","利息收入","銀行利息",25);JSONArray rows=ExpenseEdits.replace(new JSONArray().put(first),first,Income.create("2026-11-06","bank","利息收入","更正",35),"2026-11-26T08:00:00Z");
+        JSONObject backup=new JSONObject().put("version",14).put("incomes",rows).put("meterReadings",empty()).put("leases",empty()).put("expenses",empty());
+        java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();BackupArchive.write(out,backup,java.nio.file.Files.createTempDirectory("income-photos").toFile());
+        JSONObject restored=BackupArchive.read(new java.io.ByteArrayInputStream(out.toByteArray()),java.nio.file.Files.createTempDirectory("income-restore").toFile());
+        assertEquals(35,restored.getJSONArray("incomes").getJSONObject(0).getLong("amount"));assertEquals(25,restored.getJSONArray("incomes").getJSONObject(0).getJSONArray("history").getJSONObject(0).getJSONObject("previous").getLong("amount"));
+    }
     @Test public void validationRejectsMissingAccountAndInvalidAmount()throws Exception{
         try{Income.create("2026-11-26","a","利息收入","利息",0);fail();}catch(IllegalArgumentException expected){}
         try{Income.validate(new JSONObject().put("accounts",empty()).put("incomes",new JSONArray().put(Income.create("2026-11-26","missing","利息收入","利息",20))));fail();}catch(IllegalArgumentException expected){}
