@@ -55,13 +55,16 @@ public final class Bookkeeping {
     public static long balance(JSONObject account,String date,JSONArray receipts,JSONArray expenses,JSONArray transfers,JSONArray deposits,JSONArray settlements) throws JSONException {
         return Math.addExact(balance(account,date,receipts,expenses,transfers,deposits),Settlements.cashflow(account.getString("id"),account.getString("start"),date,settlements));
     }
+    public static long balance(JSONObject account,String date,JSONArray receipts,JSONArray expenses,JSONArray transfers,JSONArray deposits,JSONArray settlements,JSONArray incomes)throws JSONException{
+        return Math.addExact(balance(account,date,receipts,expenses,transfers,deposits,settlements),Income.total(incomes,account.getString("start"),date,account.getString("id")));
+    }
     public static long expenseTotal(JSONArray expenses,String start,String end,String propertyId) throws JSONException {
         long n=0;for(int i=0;i<expenses.length();i++){JSONObject r=expenses.getJSONObject(i);if(r.optBoolean("void")||!inRange(r,start,end))continue;
             if(propertyId==null)n=Math.addExact(n,Ledger.money(r,"amount"));else{JSONArray splits=r.getJSONArray("splits");for(int j=0;j<splits.length();j++)if(propertyId.equals(splits.getJSONObject(j).getString("propertyId")))n=Math.addExact(n,Ledger.money(splits.getJSONObject(j),"amount"));}}
         return n;
     }
     public static void validate(JSONObject backup) throws JSONException {
-        RentCredits.validate(backup);VoidRecords.validate(backup);
+        RentCredits.validate(backup);VoidRecords.validate(backup);Income.validate(backup);
         JSONArray accounts=backup.getJSONArray("accounts"),expenses=backup.getJSONArray("expenses"),transfers=backup.getJSONArray("transfers"),receipts=backup.getJSONArray("receipts"),reconciliations=backup.getJSONArray("reconciliations");
         if(backup.has("expenseCategories"))ExpenseCategories.validate(backup.getJSONArray("expenseCategories"),expenses);
         Set<String> accountIds=new HashSet<>(),names=new HashSet<>(),propertyIds=new HashSet<>(),ids=new HashSet<>();int cash=0;

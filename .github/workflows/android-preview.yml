@@ -1,5 +1,6 @@
 name: Android Debug Checks
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
@@ -28,4 +29,4 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build and lint
-        run: gradle :app:assembleDebug :app:lintDebug --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --no-daemon
