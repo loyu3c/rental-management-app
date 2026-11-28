@@ -50,7 +50,7 @@ jobs:
           script: |
             adb shell settings put secure show_ime_with_hard_keyboard 1
             gradle :app:connectedDebugAndroidTest --no-daemon
-            adb pull /sdcard/Android/data/com.loyu3c.rental.preview/files/ui-review app/build/ui-review
+            adb pull /sdcard/Pictures/RentalUiReview app/build/ui-review
       - uses: actions/upload-artifact@v4
         if: always()
         with:
