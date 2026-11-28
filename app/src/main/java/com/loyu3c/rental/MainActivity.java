@@ -100,7 +100,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(248, 244, 237)); root.setPadding(dp(16), dp(16), dp(16), dp(8));
         TextView heading = text("暖色帳本 / " + tabs[selected], 26, Color.rgb(83, 60, 40));
         heading.setTypeface(null, Typeface.BOLD);LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);if(selected==3&&sections[3]==0&&!propertyId.isEmpty()){Button back=iconButton(R.drawable.action_back,"返回上一層不動產");back.setOnClickListener(v->onBackPressed());toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));heading.setText("不動產");heading.setTextSize(22);toolbar.addView(heading,headerTitleParams());}else toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));Button settings=iconButton(R.drawable.action_settings,"設定");settings.setOnClickListener(v->settingsScreen());toolbar.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));root.addView(toolbar);
-        if(selected!=2)root.addView(text("整合測試版 · 資料存在手機；"+(getSharedPreferences("googleSync",MODE_PRIVATE).contains("connection")?"Google已設定（手動同步）":"Google同步未設定"), 13, Color.rgb(137, 83, 15)));
+        if(selected!=1&&selected!=2)root.addView(text("整合測試版 · 資料存在手機；"+(getSharedPreferences("googleSync",MODE_PRIVATE).contains("connection")?"Google已設定（手動同步）":"Google同步未設定"), 13, Color.rgb(137, 83, 15)));
         if(selected>0)secondaryTabs(root);
         ScrollView scroll = new ScrollView(this);mainScroll=scroll;
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); scroll.addView(body);
@@ -155,9 +155,9 @@ public class MainActivity extends Activity {
         String[] names=SECTION_NAMES[selected];
         for(int i=0;i<names.length;i++){
             final int index=i;boolean active=i==sections[selected];
-            LinearLayout button=new LinearLayout(this);button.setOrientation(selected==2?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setMinimumHeight(dp(selected==2?48:56));button.setPadding(dp(6),dp(7),dp(6),dp(7));button.setBackground(surface(active?Color.rgb(255,252,247):Color.rgb(237,229,217),12));
+            LinearLayout button=new LinearLayout(this);button.setOrientation((selected==1||selected==2)?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);button.setMinimumHeight(dp((selected==1||selected==2)?48:56));button.setPadding(dp(6),dp(7),dp(6),dp(7));button.setBackground(surface(active?Color.rgb(255,252,247):Color.rgb(237,229,217),12));
             ImageView icon=new ImageView(this);icon.setImageResource(icons[selected][i]);icon.setColorFilter(Color.rgb(100,67,43));button.addView(icon,new LinearLayout.LayoutParams(dp(18),dp(18)));
-            TextView label=text(names[i],13,Color.rgb(90,61,37));label.setGravity(Gravity.CENTER);label.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);label.setPadding(selected==2?dp(6):0,selected==2?0:dp(4),0,0);label.setIncludeFontPadding(false);button.addView(label,new LinearLayout.LayoutParams(selected==2?-2:-1,-2));
+            TextView label=text(names[i],13,Color.rgb(90,61,37));label.setGravity(Gravity.CENTER);label.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);label.setPadding((selected==1||selected==2)?dp(6):0,(selected==1||selected==2)?0:dp(4),0,0);label.setIncludeFontPadding(false);button.addView(label,new LinearLayout.LayoutParams((selected==1||selected==2)?-2:-1,-2));
             button.setClickable(true);button.setFocusable(true);button.setSelected(active);button.setContentDescription(names[i]+(active?"，目前頁籤":"，切換頁籤"));button.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);button.setOnClickListener(v->{sections[selected]=index;render();});
             LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);params.setMargins(dp(2),0,dp(2),0);bar.addView(button,params);
         }
@@ -257,7 +257,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);params.setMargins(dp(12),0,dp(12),0);return params;
     }
     private Button iconButton(int icon,String description){
-        boolean more=icon==R.drawable.action_more;int padding=dp(more?16:12),size=dp(more?16:24);
+        boolean more=icon==R.drawable.action_more||icon==R.drawable.action_info;int padding=dp(more?16:12),size=dp(more?16:24);
         Button button=styledButton("",false,false);button.setPadding(padding,padding,padding,padding);
         android.graphics.drawable.Drawable image=getDrawable(icon).mutate();image.setTint(Color.rgb(100,67,43));image.setBounds(0,0,size,size);button.setCompoundDrawables(image,null,null,null);
         if(more)button.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(235,221,202)),new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),new android.graphics.drawable.ColorDrawable(Color.WHITE)));
@@ -437,6 +437,16 @@ public class MainActivity extends Activity {
         return null;
     }
     private void openUnit(JSONObject unit) { selected=3;propertyId=unit.optString("propertyId");unitId=unit.optString("id");render(); }
+    private void compactInfoHeader(String title,String subtitle,String explanation){
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(2),0,dp(2));LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);
+        TextView heading=text(title,14,Color.rgb(77,57,39));heading.setTypeface(null,Typeface.BOLD);heading.setPadding(0,0,dp(8),0);labels.addView(heading);if(!subtitle.isEmpty()){TextView sub=text(subtitle,12,Color.rgb(112,105,92));sub.setPadding(0,dp(2),dp(8),0);labels.addView(sub);}row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));Button info=iconButton(R.drawable.action_info,"查看"+title+"說明");info.setOnClickListener(v->new AlertDialog.Builder(this).setTitle(title).setMessage(explanation).setPositiveButton("知道了",null).show());row.addView(info,new LinearLayout.LayoutParams(dp(48),dp(48)));body.addView(row,new LinearLayout.LayoutParams(-1,-2));
+    }
+    private void compactDataRow(String title,String detail,String trailing,Runnable run){
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(4),dp(12),dp(4));row.setMinimumHeight(dp(detail.contains("\n")?64:56));row.setBackground(surface(Color.rgb(255,252,247),6));LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);
+        TextView heading=text(title,14,Color.rgb(77,57,39));heading.setTypeface(null,Typeface.BOLD);heading.setMaxLines(1);heading.setEllipsize(android.text.TextUtils.TruncateAt.END);heading.setPadding(0,0,dp(8),dp(2));labels.addView(heading);
+        for(String line:detail.split("\n")){TextView sub=text(line,12,Color.rgb(112,105,92));sub.setMaxLines(1);sub.setEllipsize(android.text.TextUtils.TruncateAt.END);sub.setPadding(0,0,dp(8),0);labels.addView(sub);}row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
+        if(!trailing.isEmpty()){TextView amount=text(trailing,14,Color.rgb(77,57,39));amount.setTypeface(null,Typeface.BOLD);amount.setPadding(dp(4),0,0,0);row.addView(amount,new LinearLayout.LayoutParams(-2,-2));}row.setClickable(true);row.setFocusable(true);row.setContentDescription(title+"，"+trailing+"，"+detail+"，點擊查看明細");row.setOnClickListener(v->run.run());LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.bottomMargin=dp(2);body.addView(row,params);
+    }
     private void tapCard(String title,String detail,Runnable run) {
         LinearLayout row=card(title+"  ›",detail);row.setBackground(surface(Color.rgb(255,252,247),16));row.setMinimumHeight(dp(64));row.setClickable(true);row.setFocusable(true);row.setOnClickListener(v->run.run());row.setContentDescription(title+"，點擊查看");
     }
@@ -754,13 +764,14 @@ public class MainActivity extends Activity {
         EditText search=labeledField(panel.controls,"搜尋租客／單位／帳戶／備註");LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);layout.addView(list,new LinearLayout.LayoutParams(-1,-2));int[] limit={20};
         Runnable[] draw={null};draw[0]=()->{
             panel.summary.setText("目前："+(scope.getSelectedItemPosition()==0?month.getText():"全部月份")+" · "+kind.getSelectedItem()+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));
+            boolean changed=scope.getSelectedItemPosition()!=0||!month.getText().toString().equals(YearMonth.from(today()).toString())||kind.getSelectedItemPosition()!=0||!search.getText().toString().isEmpty();panel.reset.setVisibility(changed?View.VISIBLE:View.GONE);
             list.removeAllViews();monthRow.setVisibility(scope.getSelectedItemPosition()==0?View.VISIBLE:View.GONE);LinearLayout previous=body;body=list;
             try {
                 paymentScope=scope.getSelectedItemPosition();paymentKind=kind.getSelectedItemPosition();paymentMonth=month.getText().toString();paymentSearch=search.getText().toString();
                 JSONObject result=PaymentHistory.query(fullBackup(),scope.getSelectedItemPosition()==0?dateValue(month):"",kind.getSelectedItem().toString(),search.getText().toString());JSONArray rows=result.getJSONArray("rows");
-                card("符合查詢 "+rows.length()+" 筆","租金水電實收 $"+result.getLong("rent")+"\n押金收取 $"+result.getLong("depositReceived")+" · 退還 $"+result.getLong("depositRefunded")+"\n預收租金退款 $"+result.getLong("rentRefunded")+"\n結算補繳 $"+result.getLong("topups")+"\n上述交易淨流入 $"+result.getLong("net"));
-                card("對照存摺時請留意","依實際收付日期查詢。押金不是租金收入；抵付費用不是匯款，不列入。合計依目前篩選的全部紀錄計算，並非帳戶餘額；請到帳戶流水核對其他支出與轉帳。");
-                for(int i=0;i<Math.min(limit[0],rows.length());i++){JSONObject row=rows.getJSONObject(i);tapCard(row.getString("date")+" · "+row.getString("kind")+" $"+row.getLong("amount"),row.getString("code")+" · "+row.getString("tenant")+"\n帳戶："+row.getString("account")+(row.getString("note").isEmpty()?"":"\n"+row.getString("note")),()->{JSONObject lease=find("leases",row.optString("leaseId"));if(lease!=null)leaseLedger(lease);});}
+                String breakdown="租金水電實收 $"+fmt(result.getLong("rent"))+"\n押金收取 $"+fmt(result.getLong("depositReceived"))+" · 退還 $"+fmt(result.getLong("depositRefunded"))+"\n預收租金退款 $"+fmt(result.getLong("rentRefunded"))+"\n結算補繳 $"+fmt(result.getLong("topups"))+"\n上述交易淨流入 $"+fmt(result.getLong("net"))+"\n\n依實際收付日期查詢。押金不是租金收入；抵付費用不是匯款，不列入。合計依目前篩選的全部紀錄計算，並非帳戶餘額；請到帳戶流水核對其他支出與轉帳。";
+                compactInfoHeader("符合查詢 "+rows.length()+" 筆 · 淨流入 $"+fmt(result.getLong("net")),"點說明圖示看收付分類合計",breakdown);
+                for(int i=0;i<Math.min(limit[0],rows.length());i++){JSONObject row=rows.getJSONObject(i);boolean outgoing=row.getString("kind").equals("退還押金")||row.getString("kind").equals("預收租金退款");compactDataRow(row.getString("date")+" · "+row.getString("kind"),row.getString("code")+" · "+row.getString("tenant")+" · "+row.getString("account"),(outgoing?"−$":"$")+fmt(row.getLong("amount")),()->paymentRecordDetail(row));}
                 if(rows.length()==0)card("沒有符合的收付紀錄","可調整月份、類型或搜尋字詞；撤銷紀錄及非現金抵付不列入。");
                 if(rows.length()>limit[0])action("載入更多紀錄",()->{limit[0]+=20;draw[0].run();});
             }catch(Exception e){error(e);}finally{body=previous;}
@@ -770,15 +781,18 @@ public class MainActivity extends Activity {
         TextWatcher watcher=new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int d){}public void onTextChanged(CharSequence s,int a,int b,int c){reset.run();}public void afterTextChanged(Editable e){}};month.addTextChangedListener(watcher);search.addTextChangedListener(watcher);
         panel.reset.setOnClickListener(v->{scope.setSelection(0);kind.setSelection(0);month.setText(YearMonth.from(today()).toString());search.setText("");reset.run();});draw[0].run();return draw[0];
     }
+    private void paymentRecordDetail(JSONObject selectedRow){
+        String id=selectedRow.optString("id");LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{JSONObject current=null;JSONArray all=PaymentHistory.query(fullBackup(),"","全部","").getJSONArray("rows");for(int i=0;i<all.length();i++)if(id.equals(all.getJSONObject(i).optString("id"))){current=all.getJSONObject(i);break;}JSONObject row=current==null?selectedRow:current;if(current==null)card("此筆已不列入有效收款","原紀錄可能已撤銷或調整，請返回列表核對最新狀態。");card((current==null?"原紀錄 · ":"")+row.optString("kind")+" · $"+fmt(row.optLong("amount")),"日期："+row.optString("date")+"\n單位："+row.optString("code")+"\n租客："+row.optString("tenant")+"\n帳戶："+row.optString("account")+"\n備註："+(row.optString("note").isEmpty()?"無":row.optString("note")));JSONObject lease=find("leases",row.optString("leaseId"));if(lease!=null)action("查看租約帳務與操作",()->leaseLedger(lease));}catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("收款明細",layout,refresh);
+    }
     private void rentScreen() {
-        card("帳單與收款", "先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款。");
+        compactInfoHeader("應收帳務","點紀錄查看租約與帳單","先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款。");
         if(data("leases").length()==0){card("尚無租約","請先到不動產建立出租單位與租約。");return;}
         FilterPanel panel=new FilterPanel(body,"rent");
         EditText search=field(panel.controls,"搜尋姓名、不動產或代號");search.setText(rentSearch);
         Spinner filter=choice(panel.controls,new String[]{"全部租約","有未繳金額（含未到期）","已有帳單且全部繳清","尚未開帳單"});filter.setSelection(rentFilter);
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);body.addView(list);
         Runnable refresh=()->{
-            panel.summary.setText("目前："+filter.getSelectedItem()+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));
+            panel.summary.setText("目前："+filter.getSelectedItem()+(search.getText().toString().isEmpty()?"":" · 搜尋："+search.getText()));boolean filtered=filter.getSelectedItemPosition()!=0||!search.getText().toString().isEmpty();panel.summary.setVisibility(filtered?View.VISIBLE:View.GONE);panel.reset.setVisibility(filtered?View.VISIBLE:View.GONE);
             list.removeAllViews();LinearLayout previous=body;body=list;
             try {
                 JSONArray leases=data("leases"),invoices=data("invoices"),receipts=data("receipts");List<JSONObject> sorted=new ArrayList<>();for(int i=0;i<leases.length();i++)sorted.add(leases.getJSONObject(i));
@@ -789,8 +803,7 @@ public class MainActivity extends Activity {
                     if(!title.toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
                     long debt=0;int billed=0;for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(l.getString("id").equals(r.getString("leaseId"))){billed++;debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}}
                     int selectedFilter=filter.getSelectedItemPosition();if(selectedFilter==1&&debt<=0||selectedFilter==2&&(billed==0||debt!=0)||selectedFilter==3&&billed!=0)continue;
-                    String status=billed==0?"尚未開帳單":debt>0?"尚未繳付 $"+debt+"（含未到期）":"已開帳單全部繳清";
-                    tapCard(title,l.getString("start")+" ～ "+l.getString("end")+"\n"+status,()->leaseLedger(l));count++;
+                    compactDataRow((unit==null?l.optString("unitCodeSnapshot"):unit.optString("code"))+" · "+l.optString("tenant"),(property==null?"物件未對應":property.optString("name"))+"\n"+l.getString("start")+" ～ "+l.getString("end"),billed==0?"未開單":debt>0?"待繳 $"+fmt(debt):"已繳清",()->leaseLedger(l));count++;
                 }
                 if(count==0)card("沒有符合的租約","可調整搜尋或繳款狀態；歷史紀錄仍保留。");
             }catch(Exception e){error(e);}finally{body=previous;}
@@ -1499,10 +1512,10 @@ public class MainActivity extends Activity {
     private void drawAccounts(LinearLayout layout) {
         layout.removeAllViews();LinearLayout previous=body;body=layout;
         try{
-            card("帳戶與共用現金","餘額依已登錄的實際收款、支出及轉帳計算。押金收付另計資金、不列租金；未對應的舊收款 "+unlinkedReceipts()+" 筆不會算入任何帳戶。\n負餘額可能表示資料未補齊，請核對存摺。");
+            compactInfoHeader(data("accounts").length()+" 個帳戶",unlinkedReceipts()>0?"未對應舊收款 "+unlinkedReceipts()+" 筆":"點紀錄查看流水與對帳","餘額依已登錄的實際收款、支出及轉帳計算。押金收付另計資金、不列租金；未對應的舊收款 "+unlinkedReceipts()+" 筆不會算入任何帳戶。\n負餘額可能表示資料未補齊，請核對存摺。");
             for(JSONObject account:accountRows()) {
-                String amount;try{amount="$"+balance(account,today().toString());}catch(IllegalArgumentException e){amount="起算日在未來，今日不計算";}
-                tapCard(account.getString("name"),"帳面餘額 "+amount+"\n起算 "+account.getString("start")+" · 期初 $"+account.getLong("opening"),()->accountStatement(account));
+                String amount;try{amount="$"+fmt(balance(account,today().toString()));}catch(IllegalArgumentException e){amount="未起算";}
+                compactDataRow(account.getString("name"),"起算 "+account.getString("start")+" · 期初 $"+fmt(account.getLong("opening")),amount,()->accountStatement(account));
             }
         }catch(Exception e){error(e);}finally{body=previous;}
     }
