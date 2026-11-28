@@ -1,0 +1,106 @@
+name: Publish Verified APK
+# Publish the already-tested fixed-signature artifact once all checks for main pass.
+on:
+  workflow_run:
+    workflows: ['Android Debug Checks', 'Android Fixed Signature APK', 'Android Form Input Regression']
+    types: [completed]
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  attestations: write
+concurrency:
+  group: publish-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all checks on the same main commit
+        id: checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100" > runs.json
+          python3 - <<'PY'
+          import json, os
+          runs=json.load(open('runs.json'))['workflow_runs']
+          selected={}
+          for name in ['Android Debug Checks','Android Fixed Signature APK','Android Form Input Regression']:
+              candidates=[r for r in runs if r['name']==name and r['event']=='push' and r['head_branch']=='main' and r['head_sha']==os.environ['SOURCE_SHA']]
+              latest=max(candidates,key=lambda r:r['id']) if candidates else None
+              if not latest or latest['status']!='completed' or latest['conclusion']!='success':
+                  print('Waiting for successful check:',name)
+                  break
+              selected[name]=latest['id']
+          else:
+              with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+                  f.write('ready=true\nrun_id='+str(selected['Android Fixed Signature APK'])+'\n')
+          PY
+      - uses: actions/download-artifact@v4
+        if: steps.checks.outputs.ready == 'true'
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.checks.outputs.run_id }}
+          name: rental-management-fixed-signature
+          path: dist
+      - uses: android-actions/setup-android@v3
+        if: steps.checks.outputs.ready == 'true'
+        with:
+          packages: 'build-tools;34.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Verify upgrade identity and prepare release
+        if: steps.checks.outputs.ready == 'true'
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          mv dist/app-release.apk dist/rental-manager.apk
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          "$tools/apksigner" verify --print-certs dist/rental-manager.apk > certs.txt
+          cert=$(sed -n 's/.*certificate SHA-256 digest: //p' certs.txt | head -1 | tr '[:lower:]' '[:upper:]' | tr -d ':')
+          test "$cert" = 'D01B4742C19E72E437FF4ED547F24B587916DB6DE04685700BF54C40423012E3'
+          "$tools/aapt" dump badging dist/rental-manager.apk > package.txt
+          grep -q "package: name='com.loyu3c.rental.preview'" package.txt
+          ver=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" package.txt)
+          code=$(sed -n "s/^package: .*versionCode='\([^']*\)'.*/\1/p" package.txt)
+          test -n "$ver"
+          test "$code" -ge 55
+          tag="v${ver%-preview}"
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$ver" >> "$GITHUB_ENV"
+          (cd dist && sha256sum rental-manager.apk > SHA256SUMS.txt)
+          cp certs.txt dist/signing-certificate.txt
+          cat > notes.md <<NOTES
+          包租代管 $ver
+
+          沿用原 App 套件與固定簽章，可覆蓋更新。安裝前請先匯出完整備份；尚未完成使用者實機覆蓋驗證。
+
+          本版：精簡收支列表、月份小計、撤銷紀錄收合、Excel與PDF匯出（可選照片），儲存後可分享。
+          包含0.40版一般收入記帳與設定頁版本資訊。
+
+          已通過同一提交的單元測試、同步契約、Debug與Release lint及建置、Android模擬器測試。
+          套件：com.loyu3c.rental.preview；版本碼：$code。
+          簽章SHA-256：$cert（已與v0.39.0核對）。
+          來源提交：$SOURCE_SHA。
+          下載下方 rental-manager.apk；SHA256SUMS.txt可核對檔案。
+          NOTES
+      - uses: actions/attest-build-provenance@v2
+        if: steps.checks.outputs.ready == 'true'
+        with:
+          subject-path: dist/rental-manager.apk
+      - name: Publish APK without replacing an existing release
+        if: steps.checks.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; keeping published files unchanged."
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" dist/rental-manager.apk dist/SHA256SUMS.txt dist/signing-certificate.txt --target "$SOURCE_SHA" --title "包租代管 $VERSION_NAME" --notes-file notes.md --repo "$GITHUB_REPOSITORY"

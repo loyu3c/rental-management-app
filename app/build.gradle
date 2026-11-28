@@ -6,8 +6,8 @@ android {
         applicationId 'com.loyu3c.rental.preview'
         minSdk 26
         targetSdk 34
-        versionCode 54
-        versionName '0.40.0-preview'
+        versionCode 55
+        versionName '0.41.0-preview'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     signingConfigs {

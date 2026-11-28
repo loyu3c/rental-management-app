@@ -153,4 +153,16 @@ public class FormInputTest {
         assertEquals(records,context.getSharedPreferences("catalog",0).getString("expenses",null));
     }
 
+    @Test public void compactLedgerShowsMoreRowsAndOpensFullDetailsAndExport() throws Exception {
+        Context context=instrumentation.getTargetContext();org.json.JSONArray rows=new org.json.JSONArray();
+        for(int i=0;i<25;i++)rows.put(new JSONObject().put("id","e"+i).put("date","2026-11-28").put("accountId","a").put("category","repair").put("description",i==0?"Repair check with a very long description to inspect in full detail":"Repair check "+i).put("amount",900+i).put("splits",new org.json.JSONArray().put(new JSONObject().put("propertyId","p").put("amount",900+i))));
+        String before=rows.toString();context.getSharedPreferences("catalog",0).edit().putString("expenses",before).commit();
+        java.lang.reflect.Field selected=MainActivity.class.getDeclaredField("selected");selected.setAccessible(true);
+        instrumentation.runOnMainSync(()->{try{selected.setInt(activity,2);}catch(Exception e){throw new RuntimeException(e);}});open("render",new Class<?>[]{});
+        awaitLabel("Repair check",false);awaitLabel("匯出",true);
+        java.io.File screenshots=new java.io.File(context.getExternalFilesDir(null),"ui-review");screenshots.mkdirs();android.graphics.Bitmap screen=instrumentation.getUiAutomation().takeScreenshot();try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(screenshots,"compact-ledger.png"))){screen.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{screen.recycle();}
+        open("movementDetail",new Class<?>[]{JSONObject.class},rows.getJSONObject(0));awaitLabel("with a very long description",false);instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();
+        assertTrue(awaitLabel("匯出",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("檔案格式",false);awaitLabel("包含已撤銷紀錄",false);instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();assertEquals(before,context.getSharedPreferences("catalog",0).getString("expenses",null));
+    }
+
 }

@@ -43,6 +43,6 @@ requirements.md、tenancy-and-parking.md記錄業務規則；mobile-design.md為
 - 沿用 applicationId `com.loyu3c.rental.preview` 與既有固定簽署金鑰，遞增 versionCode 與 versionName；設定頁顯示實際安裝版本。
 - 交付為原 App 的覆蓋更新，保留帳務、附件與設定，不另建 App；不得要求先解除安裝以解決簽章問題。
 - 發布前檢查舊資料相容、相關單元測試、Google 同步契約測試、Android lint 與 release 建置。
-- 沿用 tag 觸發的 Release APK 流程，確認 APK 已上傳，且簽章憑證指紋與前版相符，再提供下載連結。
+- 保留 tag 觸發的 Release APK 流程；main 的 Debug、固定簽署、Android 模擬器檢查全部通過同一提交後，也可由自動發布流程下載已驗證 APK、核對套件及前版簽章，再建立版本 tag 與 GitHub Release，避免人工登入阻塞。既有 Release 不自動覆寫。確認 APK 已上傳及簽章相符後，再提供下載連結。
 - 覆蓋安裝與資料保存的實機驗證若尚未執行，須如實註明，不把 CI 通過當成實機驗收。
 - 安裝前建議先從設定匯出完整備份。若簽章不符則停止更新並調查，不引導解除安裝。
