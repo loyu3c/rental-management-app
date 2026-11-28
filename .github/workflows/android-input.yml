@@ -1,5 +1,11 @@
 name: Android Form Input Regression
 on:
+  pull_request:
+    paths:
+      - 'app/src/**'
+      - 'app/build.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/android-input.yml'
   push:
     branches: [main]
     paths:
