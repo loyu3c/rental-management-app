@@ -49,7 +49,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb shell settings put secure show_ime_with_hard_keyboard 1
-            gradle :app:connectedDebugAndroidTest --no-daemon
+            gradle :app:connectedDebugAndroidTest --no-daemon || { adb pull /sdcard/Pictures/RentalUiReview app/build/ui-review || true; exit 1; }
             adb pull /sdcard/Pictures/RentalUiReview app/build/ui-review
       - uses: actions/upload-artifact@v4
         if: always()

@@ -785,7 +785,7 @@ public class MainActivity extends Activity {
         String id=selectedRow.optString("id");LinearLayout layout=form();Runnable refresh=()->{layout.removeAllViews();LinearLayout previous=body;body=layout;try{JSONObject current=null;JSONArray all=PaymentHistory.query(fullBackup(),"","全部","").getJSONArray("rows");for(int i=0;i<all.length();i++)if(id.equals(all.getJSONObject(i).optString("id"))){current=all.getJSONObject(i);break;}JSONObject row=current==null?selectedRow:current;if(current==null)card("此筆已不列入有效收款","原紀錄可能已撤銷或調整，請返回列表核對最新狀態。");card((current==null?"原紀錄 · ":"")+row.optString("kind")+" · $"+fmt(row.optLong("amount")),"日期："+row.optString("date")+"\n單位："+row.optString("code")+"\n租客："+row.optString("tenant")+"\n帳戶："+row.optString("account")+"\n備註："+(row.optString("note").isEmpty()?"無":row.optString("note")));JSONObject lease=find("leases",row.optString("leaseId"));if(lease!=null)action("查看租約帳務與操作",()->leaseLedger(lease));}catch(Exception e){error(e);}finally{body=previous;}};refresh.run();showPanel("收款明細",layout,refresh);
     }
     private void rentScreen() {
-        compactInfoHeader("應收帳務","點紀錄查看租約與帳單","先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款。");
+        compactInfoHeader("應收帳務","點紀錄查看租約與帳單","先確認租金與水電建立當月帳單，再登錄收到租金。未開帳單不代表沒有欠款；待繳包含未到期的已建帳單，帳單繳清僅指已建立的帳單。");
         if(data("leases").length()==0){card("尚無租約","請先到不動產建立出租單位與租約。");return;}
         FilterPanel panel=new FilterPanel(body,"rent");
         EditText search=field(panel.controls,"搜尋姓名、不動產或代號");search.setText(rentSearch);
@@ -803,7 +803,7 @@ public class MainActivity extends Activity {
                     if(!title.toLowerCase(Locale.ROOT).contains(search.getText().toString().trim().toLowerCase(Locale.ROOT)))continue;
                     long debt=0;int billed=0;for(int i=0;i<invoices.length();i++){JSONObject r=invoices.getJSONObject(i);if(l.getString("id").equals(r.getString("leaseId"))){billed++;debt+=Ledger.total(r)-Ledger.paid(r.getString("id"),receipts);}}
                     int selectedFilter=filter.getSelectedItemPosition();if(selectedFilter==1&&debt<=0||selectedFilter==2&&(billed==0||debt!=0)||selectedFilter==3&&billed!=0)continue;
-                    compactDataRow((unit==null?l.optString("unitCodeSnapshot"):unit.optString("code"))+" · "+l.optString("tenant"),(property==null?"物件未對應":property.optString("name"))+"\n"+l.getString("start")+" ～ "+l.getString("end"),billed==0?"未開單":debt>0?"待繳 $"+fmt(debt):"已繳清",()->leaseLedger(l));count++;
+                    compactDataRow((unit==null?l.optString("unitCodeSnapshot"):unit.optString("code"))+" · "+l.optString("tenant"),(property==null?"物件未對應":property.optString("name"))+"\n"+l.getString("start")+" ～ "+l.getString("end"),billed==0?"未開單":debt>0?"待繳 $"+fmt(debt):"帳單繳清",()->leaseLedger(l));count++;
                 }
                 if(count==0)card("沒有符合的租約","可調整搜尋或繳款狀態；歷史紀錄仍保留。");
             }catch(Exception e){error(e);}finally{body=previous;}

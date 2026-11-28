@@ -101,7 +101,8 @@ public class FormInputTest {
     private AccessibilityNodeInfo awaitLabel(String label,boolean clickable){
         long until=SystemClock.uptimeMillis()+8000;
         do{AccessibilityNodeInfo node=labelled(instrumentation.getUiAutomation().getRootInActiveWindow(),label,clickable);if(node!=null)return node;SystemClock.sleep(100);}while(SystemClock.uptimeMillis()<until);
-        throw new AssertionError("Missing UI label: "+label);
+        try{reviewScreenshot("failed-ui.png");}catch(Exception ignored){}
+        throw new AssertionError("Missing UI label: "+label+"; active window: "+uiLabels(instrumentation.getUiAutomation().getRootInActiveWindow()));
     }
     @Test public void resetSearchRestoresExpenseWithoutChangingLedger() throws Exception {
         Context context=instrumentation.getTargetContext();
@@ -164,10 +165,12 @@ public class FormInputTest {
         assertTrue(awaitLabel("開啟收支全貌檢視",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("收支全貌",false);assertTrue("Overview should show at least seven records",awaitLabel("Repair check 6",false).isVisibleToUser());
         android.content.ContentValues whole=new android.content.ContentValues();whole.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"ledger-overview.png");whole.put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png");whole.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/RentalUiReview");android.net.Uri wholeUri=context.getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,whole);android.graphics.Bitmap wholeScreen=instrumentation.getUiAutomation().takeScreenshot();try(java.io.OutputStream out=context.getContentResolver().openOutputStream(wholeUri)){wholeScreen.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{wholeScreen.recycle();}instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();
         AccessibilityNodeInfo entry=awaitLabel("Repair check with a very long description",false);while(entry!=null&&!entry.isClickable())entry=entry.getParent();assertNotNull("Row must open details",entry);assertTrue(entry.performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("with a very long description",false);
-        assertTrue(awaitLabel("此筆支出的更多操作",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("修改",false);awaitLabel("撤銷",false);instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();
+        assertTrue(awaitLabel("此筆支出的更多操作",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("修改",false);awaitLabel("撤銷",false);instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();awaitLabel("此筆支出的更多操作",true);instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();awaitLabel("收支紀錄",false);
         assertTrue(awaitLabel("匯出",true).performAction(AccessibilityNodeInfo.ACTION_CLICK));awaitLabel("檔案格式",false);awaitLabel("包含已撤銷紀錄",false);instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();assertEquals(before,context.getSharedPreferences("catalog",0).getString("expenses",null));
     }
 
+    private String uiLabels(AccessibilityNodeInfo node){if(node==null)return "<no active window>";StringBuilder value=new StringBuilder();appendLabels(node,value);return value.toString();}
+    private void appendLabels(AccessibilityNodeInfo node,StringBuilder out){if(node==null||out.length()>8000)return;out.append("[").append(node.getText()).append(" | ").append(node.getContentDescription()).append("]");for(int i=0;i<node.getChildCount();i++)appendLabels(node.getChild(i),out);}
     private void reviewScreenshot(String name)throws Exception{
         Context context=instrumentation.getTargetContext();android.content.ContentValues values=new android.content.ContentValues();values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,name);values.put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png");values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/RentalUiReview");android.net.Uri uri=context.getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values);assertNotNull(uri);android.graphics.Bitmap bitmap=instrumentation.getUiAutomation().takeScreenshot();try(java.io.OutputStream out=context.getContentResolver().openOutputStream(uri)){assertNotNull(out);assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out));}finally{bitmap.recycle();}
     }
